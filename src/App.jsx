@@ -9,18 +9,18 @@ import { ref, set, get, onValue } from 'firebase/database';
 import { db } from './firebase';
 
 /* ═══════════════════════════════════════════════════════════════
-   STORAGE KEYS (v5 — multi-subject)
+   STORAGE KEYS (v1 — Moment multi-subject)
 ═══════════════════════════════════════════════════════════════ */
 const K = {
-  TIMER:               'cst_v5_global_timer',
-  DAILY_STUDY:         'cst_v5_global_daily_study',
-  SUBJECT_DAILY_STUDY: 'cst_v5_subject_daily_study',
-  ACTIVE_SUBJECT:      'cst_v5_active_subject',
-  SUBJECT_SETTINGS:    'cst_v5_subject_settings',
-  FOCUS_GOAL:          'cst_v5_focus_goal_mins',   // global daily focus-time goal
-  TIMER_OWNER_TAB:     'cst_v5_timer_owner_tab',
-  completed:    (id) => `cst_v5_${id}_completed`,
-  lectureDates: (id) => `cst_v5_${id}_lecture_dates`,
+  TIMER:               'moment_v1_global_timer',
+  DAILY_STUDY:         'moment_v1_global_daily_study',
+  SUBJECT_DAILY_STUDY: 'moment_v1_subject_daily_study',
+  ACTIVE_SUBJECT:      'moment_v1_active_subject',
+  SUBJECT_SETTINGS:    'moment_v1_subject_settings',
+  FOCUS_GOAL:          'moment_v1_focus_goal_mins',   // global daily focus-time goal
+  TIMER_OWNER_TAB:     'moment_v1_timer_owner_tab',
+  completed:    (id) => `moment_v1_${id}_completed`,
+  lectureDates: (id) => `moment_v1_${id}_lecture_dates`,
 };
 
 // Unique ID for this browser tab (used for timer owner election)
@@ -29,7 +29,7 @@ const TAB_ID = Math.random().toString(36).slice(2);
 // BroadcastChannel for cross-tab timer coordination
 // Only the "owner" tab runs setInterval; others just display.
 const TIMER_CH = typeof BroadcastChannel !== 'undefined'
-  ? new BroadcastChannel('cst_timer')
+  ? new BroadcastChannel('moment_timer')
   : null;
 
 /* ═══════════════════════════════════════════════════════════════
@@ -2357,7 +2357,7 @@ export default function App() {
                         if (data.subjectDailyStudy) ss(K.SUBJECT_DAILY_STUDY, data.subjectDailyStudy);
                         if (data.timer)             ss(K.TIMER,               data.timer);
                         if (data.subjectSettings)   ss(K.SUBJECT_SETTINGS,    data.subjectSettings);
-                        localStorage.setItem('cst_backup_imported', 'true');
+                        localStorage.setItem('moment_backup_imported', 'true');
                         window.location.reload();
                       } catch { alert('Invalid backup file.'); }
                     };
