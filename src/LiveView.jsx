@@ -244,7 +244,7 @@ export default function LiveView() {
     }, 45000);
 
     const unsub = onValue(
-      ref(db, 'users/rahul/liveStats'),
+      ref(db, 'users/default_user/liveStats'),
       (snap) => {
         clearTimeout(slowTimer);
         clearTimeout(loadingTimeoutRef.current);

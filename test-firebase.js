@@ -17,7 +17,7 @@ const db = getDatabase(app);
 
 console.log("Testing Moment Firebase connection to moment-focus...");
 
-get(ref(db, 'users/rahul/liveStats'))
+get(ref(db, 'users/default_user/liveStats'))
   .then((snapshot) => {
     console.log("Success! Data connected from moment-focus:", snapshot.val());
     process.exit(0);

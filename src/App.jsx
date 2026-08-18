@@ -252,7 +252,7 @@ function Stopwatch({ onTick, onAdjust, onReset, firebaseInitialElapsed, firebase
       ? { sessionStartTs: startTs, sessionElapsed: el, lastSavedTs: Date.now() }
       : { sessionElapsed: el, sessionStartTs: null,    lastSavedTs: Date.now() };
     ss(K.TIMER, payload);
-    set(ref(db, 'users/rahul/global/timer'), payload).catch(console.error);
+    set(ref(db, 'users/default_user/global/timer'), payload).catch(console.error);
   }, []);
   useEffect(() => { persistTimerStableRef.current = persistTimer; }, [persistTimer]);
 
@@ -414,7 +414,7 @@ function Stopwatch({ onTick, onAdjust, onReset, firebaseInitialElapsed, firebase
 
     let firstFire = true;
     const unsub = onValue(
-      ref(db, 'users/rahul/global/timer'),
+      ref(db, 'users/default_user/global/timer'),
       (snap) => {
         if (firstFire) { firstFire = false; return; } // skip own initial snapshot
 
@@ -1447,7 +1447,7 @@ export default function App() {
     const next = { ...subjectSettings, [activeSubjectId]: { dailyGoalMins: newGoalMins } };
     setSubjectSettings(next);
     ss(K.SUBJECT_SETTINGS, next);
-    set(ref(db, 'users/rahul/global/settings/subjects'), next).catch(console.error);
+    set(ref(db, 'users/default_user/global/settings/subjects'), next).catch(console.error);
   }, [subjectSettings, activeSubjectId]);
   const subjectSettingsRef = useRef(subjectSettings);
   useEffect(() => { subjectSettingsRef.current = subjectSettings; }, [subjectSettings]);
@@ -1460,7 +1460,7 @@ export default function App() {
     const v = Math.max(0, newMins);
     setFocusGoalMins(v);
     ss(K.FOCUS_GOAL, v);
-    set(ref(db, 'users/rahul/global/settings/focusGoalMins'), v).catch(console.error);
+    set(ref(db, 'users/default_user/global/settings/focusGoalMins'), v).catch(console.error);
   }, []);
 
   // ── Per-subject state: { [subjectId]: { completedIds, lectureDates } } ──
@@ -1568,8 +1568,8 @@ export default function App() {
   // ── Firebase load + migration ─────────────────────────────────
   useEffect(() => {
 
-    const globalRef  = ref(db, 'users/rahul/global');
-    const oldStatsRef = ref(db, 'users/rahul/stats');
+    const globalRef  = ref(db, 'users/default_user/global');
+    const oldStatsRef = ref(db, 'users/default_user/stats');
 
     // Keep refs to tear down realtime listeners on unmount
     let unsubSubjects   = null;
@@ -1598,19 +1598,19 @@ export default function App() {
         });
 
         // Write to new paths
-        await set(ref(db, 'users/rahul/global/dailyStudy'),         migratedDailyStudy);
-        await set(ref(db, 'users/rahul/global/timer'),               migratedTimer);
-        await set(ref(db, 'users/rahul/global/subjectDailyStudy'),   migratedSubjectDs);
-        await set(ref(db, 'users/rahul/global/settings/subjects'),   migratedSettings);
-        await set(ref(db, 'users/rahul/global/migrated'),            true);
-        await set(ref(db, 'users/rahul/subjects/algorithms/completed'),    migratedCompleted);
-        await set(ref(db, 'users/rahul/subjects/algorithms/lectureDates'), migratedLectureDates);
+        await set(ref(db, 'users/default_user/global/dailyStudy'),         migratedDailyStudy);
+        await set(ref(db, 'users/default_user/global/timer'),               migratedTimer);
+        await set(ref(db, 'users/default_user/global/subjectDailyStudy'),   migratedSubjectDs);
+        await set(ref(db, 'users/default_user/global/settings/subjects'),   migratedSettings);
+        await set(ref(db, 'users/default_user/global/migrated'),            true);
+        await set(ref(db, 'users/default_user/subjects/algorithms/completed'),    migratedCompleted);
+        await set(ref(db, 'users/default_user/subjects/algorithms/lectureDates'), migratedLectureDates);
 
         // Init all other subjects with empty data
         for (const subj of SUBJECT_LIST) {
           if (subj.id === 'algorithms') continue;
-          await set(ref(db, `users/rahul/subjects/${subj.id}/completed`),    []);
-          await set(ref(db, `users/rahul/subjects/${subj.id}/lectureDates`), {});
+          await set(ref(db, `users/default_user/subjects/${subj.id}/completed`),    []);
+          await set(ref(db, `users/default_user/subjects/${subj.id}/lectureDates`), {});
         }
 
         // Update localStorage keys
@@ -1641,8 +1641,8 @@ export default function App() {
 
       // ── NORMAL LOAD (already migrated) ──
       const [allSubjSnap, settingsSnap] = await Promise.all([
-        get(ref(db, 'users/rahul/subjects')),
-        get(ref(db, 'users/rahul/global/settings')), // full settings node (subjects + activeSubject + focusGoalMins)
+        get(ref(db, 'users/default_user/subjects')),
+        get(ref(db, 'users/default_user/global/settings')), // full settings node (subjects + activeSubject + focusGoalMins)
       ]);
 
       // Load global timer + daily study
@@ -1677,8 +1677,8 @@ export default function App() {
       ss(K.DAILY_STUDY, savedDailyStudy);
       ss(K.SUBJECT_DAILY_STUDY, savedSubjDs);
       ss(K.SUBJECT_SETTINGS, savedSettings);
-      set(ref(db, 'users/rahul/global/dailyStudy'), savedDailyStudy).catch(console.error);
-      set(ref(db, 'users/rahul/global/timer'), calcTimer).catch(console.error);
+      set(ref(db, 'users/default_user/global/dailyStudy'), savedDailyStudy).catch(console.error);
+      set(ref(db, 'users/default_user/global/timer'), calcTimer).catch(console.error);
 
       // Build initial allSubjectsData from the one-time snapshot
       const subjVal    = allSubjSnap.exists() ? allSubjSnap.val() : {};
@@ -1719,7 +1719,7 @@ export default function App() {
       }
       if (!remoteActiveSubj) {
         // First ever load on this account — seed Firebase with local value
-        set(ref(db, 'users/rahul/global/settings/activeSubject'), resolvedActiveSubj).catch(console.error);
+        set(ref(db, 'users/default_user/global/settings/activeSubject'), resolvedActiveSubj).catch(console.error);
       }
 
       if (savedTimer.sessionStartTs) {
@@ -1730,7 +1730,7 @@ export default function App() {
 
       // ── REALTIME LISTENERS for cross-device sync ─────────────────────────
       unsubSubjects = onValue(
-        ref(db, 'users/rahul/subjects'),
+        ref(db, 'users/default_user/subjects'),
         (snap) => {
           const val = snap.val() || {};
           const updated = {};
@@ -1749,7 +1749,7 @@ export default function App() {
 
       // Keep activeSubject synchronized across all devices in real-time
       unsubActiveSubj = onValue(
-        ref(db, 'users/rahul/global/settings/activeSubject'),
+        ref(db, 'users/default_user/global/settings/activeSubject'),
         (snap) => {
           const val = snap.val();
           if (val && SUBJECTS[val] && val !== activeSubjectIdRef.current) {
@@ -1762,7 +1762,7 @@ export default function App() {
 
       // Keep subjectDailyStudy synchronized across all devices in real-time
       unsubSubjectDs = onValue(
-        ref(db, 'users/rahul/global/subjectDailyStudy'),
+        ref(db, 'users/default_user/global/subjectDailyStudy'),
         (snap) => {
           const val = snap.val();
           if (val) {
@@ -1776,7 +1776,7 @@ export default function App() {
 
       // Keep focusGoalMins synchronized across all devices in real-time
       unsubFocusGoal = onValue(
-        ref(db, 'users/rahul/global/settings/focusGoalMins'),
+        ref(db, 'users/default_user/global/settings/focusGoalMins'),
         (snap) => {
           const val = snap.val();
           if (val !== null && val !== undefined) {
@@ -1789,7 +1789,7 @@ export default function App() {
 
       // Keep global dailyStudy synchronized across all devices in real-time
       unsubDailyStudy = onValue(
-        ref(db, 'users/rahul/global/dailyStudy'),
+        ref(db, 'users/default_user/global/dailyStudy'),
         (snap) => {
           const val = snap.val();
           if (val) {
@@ -1910,7 +1910,7 @@ export default function App() {
       };
     }
 
-    set(ref(db, 'users/rahul/liveStats'), {
+    set(ref(db, 'users/default_user/liveStats'), {
       todayStudySeconds:   trueToday,
       timerRunning:        timerRunningRef.current,
       activeSubject:       activeId,
@@ -1965,8 +1965,8 @@ export default function App() {
 
     // Throttle Firebase write to every 10 s
     if (nextDs[today] % 10 === 0) {
-      set(ref(db, 'users/rahul/global/dailyStudy'), nextDs).catch(console.error);
-      set(ref(db, 'users/rahul/global/subjectDailyStudy'), nextSDs).catch(console.error);
+      set(ref(db, 'users/default_user/global/dailyStudy'), nextDs).catch(console.error);
+      set(ref(db, 'users/default_user/global/subjectDailyStudy'), nextSDs).catch(console.error);
     }
     setDailyStudy(nextDs);
     setSubjectDailyStudy(nextSDs);
@@ -1977,11 +1977,11 @@ export default function App() {
     const handleHide = () => {
       if (dailyStudyRef.current) {
         ss(K.DAILY_STUDY, dailyStudyRef.current);
-        set(ref(db, 'users/rahul/global/dailyStudy'), dailyStudyRef.current).catch(console.error);
+        set(ref(db, 'users/default_user/global/dailyStudy'), dailyStudyRef.current).catch(console.error);
       }
       if (subjectDailyStudyRef.current) {
         ss(K.SUBJECT_DAILY_STUDY, subjectDailyStudyRef.current);
-        set(ref(db, 'users/rahul/global/subjectDailyStudy'), subjectDailyStudyRef.current).catch(console.error);
+        set(ref(db, 'users/default_user/global/subjectDailyStudy'), subjectDailyStudyRef.current).catch(console.error);
       }
     };
     window.addEventListener('pagehide', handleHide);
@@ -2004,7 +2004,7 @@ export default function App() {
     const nextDs = { ...dailyStudyRef.current, [today]: clamped };
     dailyStudyRef.current = nextDs;
     ss(K.DAILY_STUDY, nextDs);
-    set(ref(db, 'users/rahul/global/dailyStudy'), nextDs).catch(console.error);
+    set(ref(db, 'users/default_user/global/dailyStudy'), nextDs).catch(console.error);
     setDailyStudy(nextDs);
 
     // --- Active subject daily study ---
@@ -2033,7 +2033,7 @@ export default function App() {
     };
     subjectDailyStudyRef.current = nextSDs;
     ss(K.SUBJECT_DAILY_STUDY, nextSDs);
-    set(ref(db, 'users/rahul/global/subjectDailyStudy'), nextSDs).catch(console.error);
+    set(ref(db, 'users/default_user/global/subjectDailyStudy'), nextSDs).catch(console.error);
     setSubjectDailyStudy(nextSDs);
 
     // Push liveStats right away so LiveView reflects the new time
@@ -2049,12 +2049,12 @@ export default function App() {
     const nextDs = { ...dailyStudyRef.current, [today]: 0 };
     dailyStudyRef.current = nextDs;
     ss(K.DAILY_STUDY, nextDs);
-    set(ref(db, 'users/rahul/global/dailyStudy'), nextDs).catch(console.error);
+    set(ref(db, 'users/default_user/global/dailyStudy'), nextDs).catch(console.error);
     setDailyStudy(nextDs);
     const nextSDs = { ...subjectDailyStudyRef.current, [today]: {} };
     subjectDailyStudyRef.current = nextSDs;
     ss(K.SUBJECT_DAILY_STUDY, nextSDs);
-    set(ref(db, 'users/rahul/global/subjectDailyStudy'), nextSDs).catch(console.error);
+    set(ref(db, 'users/default_user/global/subjectDailyStudy'), nextSDs).catch(console.error);
     setSubjectDailyStudy(nextSDs);
     // Push liveStats immediately so LiveView reflects the reset at once
     // (without this, LiveView shows stale data until the next 30s heartbeat)
@@ -2072,7 +2072,7 @@ export default function App() {
     };
     subjectDailyStudyRef.current = nextSDs;
     ss(K.SUBJECT_DAILY_STUDY, nextSDs);
-    set(ref(db, 'users/rahul/global/subjectDailyStudy'), nextSDs).catch(console.error);
+    set(ref(db, 'users/default_user/global/subjectDailyStudy'), nextSDs).catch(console.error);
     setSubjectDailyStudy(nextSDs);
     // Push liveStats so LiveView reflects the change immediately
     pushLiveStatsRef.current?.();
@@ -2082,15 +2082,15 @@ export default function App() {
     if (newId === activeSubjectId) return;
     // Flush current dailyStudy and subjectDailyStudy to Firebase immediately
     if (dailyStudyRef.current) {
-      set(ref(db, 'users/rahul/global/dailyStudy'), dailyStudyRef.current).catch(console.error);
+      set(ref(db, 'users/default_user/global/dailyStudy'), dailyStudyRef.current).catch(console.error);
     }
     if (subjectDailyStudyRef.current) {
-      set(ref(db, 'users/rahul/global/subjectDailyStudy'), subjectDailyStudyRef.current).catch(console.error);
+      set(ref(db, 'users/default_user/global/subjectDailyStudy'), subjectDailyStudyRef.current).catch(console.error);
     }
 
     localStorage.setItem(K.ACTIVE_SUBJECT, newId);
     // Write to Firebase so every other device (mobile, LiveView) opens with this subject
-    set(ref(db, 'users/rahul/global/settings/activeSubject'), newId).catch(console.error);
+    set(ref(db, 'users/default_user/global/settings/activeSubject'), newId).catch(console.error);
     setActiveSubjectId(newId);
   }, [activeSubjectId]);
 
@@ -2115,8 +2115,8 @@ export default function App() {
     const arrayIds = [...nextIds];
     ss(K.completed(subjId),    arrayIds);
     ss(K.lectureDates(subjId), nextDates);
-    set(ref(db, `users/rahul/subjects/${subjId}/completed`),    arrayIds).catch(console.error);
-    set(ref(db, `users/rahul/subjects/${subjId}/lectureDates`), nextDates).catch(console.error);
+    set(ref(db, `users/default_user/subjects/${subjId}/completed`),    arrayIds).catch(console.error);
+    set(ref(db, `users/default_user/subjects/${subjId}/lectureDates`), nextDates).catch(console.error);
 
     setAllSubjectsData(prev => ({
       ...prev,
