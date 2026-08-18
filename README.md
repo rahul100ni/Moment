@@ -1,62 +1,72 @@
-# 📚 Algorithms Course Tracker
+# ⚡ Moment — Deep-Work Study Engine & Accountability Platform
 
-A premium, high-density, highly interactive single-page Course Study Tracker & Stopwatch Application designed for deep focus. 
+> **Moment** is a highly resilient, cross-platform productivity and study engine designed for deep work. Built on a wall-clock anchored cross-tab synchronization system, it provides an unbreakable focus environment. Moment transforms overwhelming curriculums into manageable, gamified daily targets, while offering frictionless, real-time accountability through zero-login live sharing.
 
-Built with **React**, **Tailwind CSS v3**, and **Vite**.
-
-![App Preview](https://via.placeholder.com/1000x500.png?text=Course+Tracker+Dashboard)
+---
 
 ## ✨ Features
 
-* **Session Focus Hub (The Timer)**: A precise stopwatch to track active, real-time study sessions. Resilient to tab closures and browser refreshes—your elapsed time is securely saved and automatically resumes.
-* **Daily Goal Card**: Tracks your daily course consumption against a customizable target (e.g., 4 hours). Displays dynamic color shifts (Indigo → Amber → Emerald) as you approach and meet your goal.
-* **Interactive Syllabus**: Collapsible, accordion-style sections containing individual lectures. Ticking off lectures instantly updates your progress globally.
-* **Study History Dashboard**: A persistent historical log of your study habits. Review daily time tracked, content consumed, lectures finished, and overall completion percentage.
-* **Streak Tracker**: Maintains a streak counter (🔥) for consecutive days you meet your content goal.
-* **100% Local Persistence**: All your progress, histories, and timer states are automatically saved directly in your browser's `localStorage`. No accounts, no cloud sync delays, no data loss.
-* **Data Portability**: Easily export your entire progress to a JSON backup file and import it back on any other device or browser.
+- **⏱️ The Unbreakable Focus Engine**: A stopwatch anchored to wall-clock timestamps (`sessionStartTs`). Impervious to browser sleep, tab throttling, or accidental refreshes.
+- **🔄 Cross-Tab Leader Election**: Powered by the `BroadcastChannel` API—only the leader tab manages the interval loop while all other tabs stay in lockstep without duplicate ticks.
+- **📚 Modular Curriculum Tracking**: Dynamic, section-by-section syllabus tracking with lecture duration calculations and automated completion analytics.
+- **🎯 Dynamic Daily Goals**: Visual color progression (Indigo $\rightarrow$ Amber $\rightarrow$ Emerald) as you approach and crush your daily study targets.
+- **🔥 Habit & Streak Tracking**: Automated daily study logs, session duration history, and streak counter for consecutive days of deep focus.
+- **🔗 Zero-Login Study Buddy Live View**: Share a secure, real-time dashboard link with friends, study groups, or mentors (`/live?u=username`) with **zero login required** for the viewer.
+- **💾 Dual-Layer Persistence**: Instant-response local storage coupled with real-time Firebase cloud synchronization.
+
+---
+
+## 🛠️ Tech Stack
+
+- **Frontend**: [React 19](https://react.dev/), [Tailwind CSS](https://tailwindcss.com/), [Lucide React](https://lucide.dev/)
+- **Bundler & Tooling**: [Vite](https://vitejs.dev/)
+- **Real-Time Backend**: [Firebase Realtime Database](https://firebase.google.com/products/realtime-database)
+- **Multi-Tab Sync**: Web `BroadcastChannel` API
+- **Mobile Target**: [Capacitor](https://capacitorjs.com/) (Android Foreground Service, Lock Screen Controls, Widgets)
+
+---
 
 ## 🚀 Quick Start (Local Development)
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/rahul100ni/Course-Tracker.git
-   cd Course-Tracker
-   ```
+### 1. Clone & Navigate
+```bash
+git clone https://github.com/rahul100ni/Moment.git
+cd Moment
+```
 
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
+### 2. Install Dependencies
+```bash
+npm install
+```
 
-3. **Start the development server**
-   ```bash
-   npm run dev
-   ```
+### 3. Start Development Server
+```bash
+npm run dev
+```
 
-## 🛠️ Build for Production
+---
 
-To create a static production build:
+## 🌐 Production Build & Deployment
 
+### Build
 ```bash
 npm run build
 ```
-The output will be placed in the `dist` folder. Because the project uses `base: './'` in its Vite configuration, you can simply open the built `dist/index.html` file directly in your browser without needing a web server!
+The production bundle will be generated in `dist/`.
 
-## 🌐 Deploying to Vercel
-
-This app is optimized for seamless zero-config deployment on Vercel:
-1. Log in to [Vercel](https://vercel.com).
-2. Click **Add New → Project**.
-3. Import this repository.
-4. Leave the Framework Preset as **Vite**.
-5. Click **Deploy**.
-
-## 🎨 Design Philosophy
-
-* **Vibe**: Premium, clean, and high-density, inspired by advanced IDEs and top-tier learning platforms.
-* **Aesthetics**: Ultra-modern, high-contrast dark mode using deep slate backgrounds coupled with vibrant indigo, emerald, and amber accent colors.
-* **UX**: Fast, responsive, and distraction-free to optimize long study sessions.
+### Zero-Config Vercel Deployment
+1. Import repository into [Vercel](https://vercel.com).
+2. Framework Preset: **Vite**.
+3. Deploy!
 
 ---
-*Built with ❤️ for focused learning.*
+
+## 📖 Documentation & Architecture
+
+- **[VISION.md](./VISION.md)**: Product vision, mission, core pillars, and long-term roadmap.
+- **[brainstorm.md](./brainstorm.md)**: Technical architecture, Firebase multi-user schema, security rules, and Android Capacitor implementation specifications.
+
+---
+
+## 📄 License
+MIT © Rahul

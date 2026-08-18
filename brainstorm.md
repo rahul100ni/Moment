@@ -1,43 +1,66 @@
-# 🧠 Brainstorming: Dynamic Multi-User Platform & Native Android App
+# 🧠 Moment — Technical Architecture & Implementation Roadmap
 
-> **Scope**: High-level architecture, roadmap, and design specifications.  
-> **Rule**: No modifications to the active production codebase. All existing timer logic, sync guarantees, and mathematical reliability remain 100% intact.
-
----
-
-## 🎯 Vision Overview
-
-1. **Dynamic Multi-User & Shareable Study Buddy Links (Web)**
-   - Move from single-user (`users/rahul`) to dynamic authenticated users (`users/{uid}`).
-   - Anyone can sign up/login, track their own subjects, timers, and goals.
-   - **One-Click Shareable Live View**: Every user gets a dedicated public link (e.g. `tracker.app/live?u=rahul` or `tracker.app/live/rahul`).
-   - Anyone with the link can view real-time study progress with **zero login required**.
-
-2. **Native Android Application**
-   - Transform the tracker into a true Android app (`.apk` / Play Store).
-   - Add native OS capabilities: Foreground Service (persistent notification timer), Screen-off background stability, and Home Screen Widgets.
+> **Scope**: Detailed technical blueprint for transforming **Moment** from a single-user focus engine into a scalable, multi-user web ecosystem and native Android application.  
+> **Core Invariant**: Zero disruption to the active focus engine. All timer math (`sessionStartTs`), multi-tab leader election (`BroadcastChannel`), lockstep synchronization, and extrapolation algorithms remain 100% intact.
 
 ---
 
-# 🚀 Part 1: Dynamic Multi-User & Study Buddy System
-
-### 1. The Core Principle: Preserving the Existing Engine
-The timer engine, lockstep attribution, multi-tab election, and LiveView extrapolation are rock solid.  
-To support multiple users without touching the engine's core math:
-- All database paths change from hardcoded `users/rahul/...` to `users/${currentUserId}/...`.
-- The engine functions take `userId` as context.
+## 🏗️ Architecture Overview
 
 ```
-Firebase Database Hierarchy:
+                          ┌──────────────────────────┐
+                          │       MOMENT CLIENT      │
+                          │   (Web & Capacitor App)  │
+                          └─────────────┬────────────┘
+                                        │
+                 ┌──────────────────────┴──────────────────────┐
+                 ▼                                             ▼
+     ┌───────────────────────┐                     ┌───────────────────────┐
+     │   Authenticated User  │                     │   Study Buddy Viewer  │
+     │      (Main App)       │                     │    (Zero-Login Live)  │
+     └───────────┬───────────┘                     └───────────┬───────────┘
+                 │                                             │
+                 │ Read / Write                                │ Read Only
+                 ▼                                             ▼
+     ┌─────────────────────────────────────────────────────────────────────┐
+     │                     Firebase Realtime Database                      │
+     │                                                                     │
+     │   users/{uid}/global/ (timer, dailyStudy, subjectDailyStudy)        │
+     │   users/{uid}/subjects/ (completed, lectureDates)                   │
+     │   users/{uid}/liveStats/ (public read for study buddies)           │
+     │   usernames/{handle} -> uid                                         │
+     └─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+# 🚀 Part 1: Dynamic Multi-User & Shareable Study Buddy System
+
+### 1. Zero-Disruption Dynamic Engine Context
+Currently, the database references are scoped to `users/rahul/...`. To support any number of users:
+- The core engine functions will receive `userId` via a lightweight React Context / parameter.
+- Default fallback ensures offline and guest sessions continue functioning seamlessly without network lag.
+
+```
+Firebase Realtime Database Hierarchy:
 users/
   ├── {userId_A}/                    <-- Protected (Owner Read/Write)
   │     ├── global/
-  │     │     ├── timer
-  │     │     ├── dailyStudy
-  │     │     ├── subjectDailyStudy
-  │     │     └── settings/ (activeSubject, focusGoalMins, subjects)
-  │     ├── subjects/ (completed, lectureDates)
+  │     │     ├── timer              <-- { sessionElapsed, sessionStartTs, lastSavedTs, running }
+  │     │     ├── dailyStudy         <-- { "2026-08-18": 14400, ... }
+  │     │     ├── subjectDailyStudy  <-- { "2026-08-18": { "algorithms": 7200, ... } }
+  │     │     └── settings/          <-- { activeSubject, focusGoalMins, subjects }
+  │     ├── subjects/
+  │     │     └── {subjectId}/       <-- { completed: [1, 2, ...], lectureDates: { "1": "2026-08-18" } }
   │     └── liveStats/               <-- Public Read, Owner Write (for Live View)
+  │           ├── activeSubject
+  │           ├── running
+  │           ├── timerStartTs
+  │           ├── todayFocusSecs
+  │           ├── todayCourseMins
+  │           ├── streak
+  │           └── updatedAt
+  │
   └── {userId_B}/
         └── ...
 ```
@@ -45,26 +68,27 @@ users/
 ---
 
 ### 2. Authentication & Backward Compatibility
-- **Auth Provider**: Firebase Authentication (Google One-Tap Sign-In + Email/Password + Anonymous Guest Mode).
-- **Legacy Account Preservation**: Your current account (`rahul`) will be linked directly to your Google account on first login, ensuring **zero data loss**.
+- **Auth Provider**: Firebase Authentication (Google One-Tap Sign-In, Email/Password, and Guest/Local Mode).
+- **Zero Data Loss Guarantee**: Legacy account data (e.g. `users/rahul`) will automatically migrate/link to the user's authenticated Google account on first sign-in.
 - **User Handles / Slugs**:
-  - Each user chooses a unique username / handle (e.g. `rahul`, `alex`, `sarah`).
-  - Mapping table: `usernames/{username} -> {uid}` allows friendly URLs like `/live?u=rahul` instead of ugly random UID strings.
+  - Each user chooses a unique username / handle (e.g., `rahul`, `alex`, `sarah`).
+  - Mapping registry: `usernames/{username} -> {uid}` allows human-friendly shareable URLs:
+    $$\text{https://moment.app/live?u=rahul} \quad \text{instead of} \quad \text{https://moment.app/live?u=a8X9fK2001l...}$$
 
 ---
 
-### 3. Shareable "Study Buddy" Live Link
-- **Main App UI**: Add a **"🔗 Share Live Progress"** button in the header.
-- **Click Action**: Copies `https://tracker.domain/live?u=rahul` to clipboard with a visual toast notification ("Live link copied!").
-- **Recipient Experience**:
-  - Study buddy clicks the link.
-  - Opens `LiveView` immediately.
-  - **No login, no signup, no permissions prompt**.
-  - Displays the friend's current subject, live ticking clock, today's focus time, completed lectures, and course progress in real-time.
+### 3. Shareable "Study Buddy" Live Link Flow
+1. **User Side**:
+   - In the header, a prominent **"🔗 Share Live Progress"** button.
+   - Clicking copies `https://moment.app/live?u=<username>` to clipboard with an instant confirmation toast.
+2. **Study Buddy Side**:
+   - Opens the link in any mobile/desktop browser.
+   - **Zero login, zero signup, zero friction**.
+   - Displays real-time ticking focus timer, active course module, daily focus completion ring, and lecture checklist.
 
 ---
 
-### 4. Firebase Security Rules (Privacy & Data Protection)
+### 4. Firebase Security & Privacy Rules
 ```json
 {
   "rules": {
@@ -90,79 +114,83 @@ users/
 
 ---
 
-# 📱 Part 2: Native Android Application
+# 📱 Part 2: Native Android Application (Capacitor)
 
-To turn this into a real Android app, there are two primary architectural pathways:
+### 1. Why Capacitor Native Container?
+- **100% Code Reuse**: The battle-tested React engine runs inside a high-performance native WebView.
+- **Native OS Bridge**: Full access to native Android APIs (Foreground Services, Notifications, Storage, Haptics).
+- **Fast Time to Market**: No duplicate maintenance or porting required.
 
----
-
-### Approach A: Capacitor Native Container (Recommended)
-**Why this is the best path for this project:**
-- **100% Code Reuse**: Runs the exact same battle-tested React codebase inside a high-performance native WebView.
-- **Native Android Bridge**: Gives full access to Android Native APIs (Services, Notifications, Widgets, Storage).
-- **Fastest to production**: Zero need to rewrite 2,500 lines of UI in Kotlin/Java.
-
-#### Native Android Features Unlocked with Capacitor:
-1. **Android Foreground Service & Notification Timer**:
-   - Runs a persistent notification in the Android status bar (e.g. `⏱️ 02:45:10 — Engineering Mathematics [Pause] [Done]`).
-   - Android OS will **never kill or throttle the timer in the background**, even when battery saver is on or when the screen is locked for 6 hours.
-2. **Lock Screen Controls**:
-   - Pause / Resume timer directly from the lock screen without unlocking the phone.
-3. **Home Screen Glance Widget**:
-   - An Android App Widget showing:
-     - Today's Total Focus Time
-     - Currently Active Subject
-     - Quick "Start/Pause" button right on the phone's home screen.
-4. **Haptic Feedback**:
-   - Subtle native vibrations on timer start, pause, reset, and lecture completion.
-5. **Offline SQLite / Local Cache**:
-   - Full offline functionality when studying in libraries with poor cellular connectivity.
+```
+┌────────────────────────────────────────────────────────┐
+│                   Moment Android App                   │
+├────────────────────────────────────────────────────────┤
+│  Native Android Shell (Capacitor Runtime)              │
+│  ├── Android Foreground Service (Persistent Timer)     │
+│  ├── Lock Screen Notification & Media Controls         │
+│  ├── Jetpack Glance Home Screen Widgets                │
+│  └── Native Haptic Feedback & Power WakeLocks          │
+├────────────────────────────────────────────────────────┤
+│  High-Performance WebView                              │
+│  └── Moment React 19 UI & Core Engine                  │
+└────────────────────────────────────────────────────────┘
+```
 
 ---
 
-### Approach B: Pure Native Android App (Kotlin + Jetpack Compose)
-- **Tech Stack**: Kotlin, Jetpack Compose, Android Room DB, Firebase Android SDK, WorkManager.
-- **Pros**: 100% native UI performance, deep Material 3 / Dynamic Theming integration.
-- **Cons**: Requires building the entire UI, state machine, and charts from scratch in Kotlin.
+### 2. Android Capabilities Breakdown
+
+#### A. Android Foreground Service & Persistent Status Bar Timer
+- Android aggressively terminates background tasks unless anchored to a **Foreground Service**.
+- Moment runs an ongoing notification:
+  $$\text{⏱️ 02:45:10 — Algorithms} \quad [\text{Pause}] \quad [\text{Done}]$$
+- **Guarantee**: Even if the screen is locked for 8 hours or battery saver is active, the timer continues with mathematical precision.
+
+#### B. Lock Screen Interactive Controls
+- Media/Notification style action buttons allow users to pause, resume, or finish sessions directly on the lock screen without unlocking their phone.
+
+#### C. Home Screen Glance Widgets
+- Compact Android widget showing:
+  - Today's Total Focus Time
+  - Active Subject & Current Lecture
+  - Daily Goal Progress Ring
+  - One-tap "Start / Resume" button
+
+#### D. Native Haptics & Desk Focus Mode
+- Tactile feedback upon timer start, pause, reset, and lecture completion.
+- Optional "Keep Screen Awake" desk study mode.
 
 ---
 
-# 🗺️ Implementation Roadmap (Phased Execution)
+# 🗺️ Phased Implementation Plan
 
 ```mermaid
 flowchart TD
-    A[Phase 1: Multi-User Architecture] --> B[Phase 2: Auth & Shareable Live Link]
-    B --> C[Phase 3: Capacitor Android Setup]
-    C --> D[Phase 4: Android Foreground Service & Notifications]
-    D --> E[Phase 5: Home Screen Widgets & Play Store Build]
+    Phase1[Phase 1: Dynamic User ID & Auth Migration] --> Phase2[Phase 2: Shareable Live Link & Handle Routing]
+    Phase2 --> Phase3[Phase 3: Capacitor Android Initialization]
+    Phase3 --> Phase4[Phase 4: Android Foreground Service & Lock Screen Controls]
+    Phase4 --> Phase5[Phase 5: Home Screen Widgets & Release Pipeline]
 ```
 
-### Phase 1: Dynamic User ID Parameterization
-- Replace hardcoded `rahul` with dynamic `userId` context.
-- Keep default fallback so development and offline modes continue working seamlessly.
+### Phase 1: Dynamic User Partitioning
+* Refactor database references from static paths to dynamic `users/${userId}` contexts.
+* Implement seamless local guest mode fallback.
 
 ### Phase 2: Firebase Auth & Public Live View Routing
-- Add Login Modal (Google Auth + Email).
-- Add username reservation (`usernames/{handle}`).
-- Update `LiveView.jsx` to parse `?u=handle` or `?u=uid` from the URL query.
-- Add "Copy Share Link" button with toast notification.
+* Add Firebase Authentication modal (Google Sign-In + Email).
+* Add handle reservation (`usernames/{handle}`).
+* Update `LiveView.jsx` to resolve `?u=username` $\rightarrow$ `uid` dynamically.
+* Add header "Share Live Progress" button with clipboard toast.
 
 ### Phase 3: Android App Initialization (Capacitor)
-- Add `@capacitor/core`, `@capacitor/android`, and `@capacitor/cli`.
-- Generate native Android Studio project (`android/` folder).
-- Configure Android package ID (e.g. `com.gate.coursetracker`), app icons, splash screen, and permissions.
+* Add `@capacitor/core`, `@capacitor/android`, and `@capacitor/cli`.
+* Generate Android Studio project (`/android`).
+* Configure package ID (`com.moment.tracker`), icons, splash screen, and permissions.
 
-### Phase 4: Native Android Capabilities
-- Implement Android Foreground Service for the persistent notification timer.
-- Add notification action buttons (Play / Pause / Next Lecture).
-- Add Keep-Screen-On toggle for desk study mode.
+### Phase 4: Foreground Service & Lock Screen Notification
+* Implement native Android Foreground Service for timer persistence.
+* Bind notification actions (`Play`, `Pause`, `Complete`) to the webview state.
 
-### Phase 5: App Store Release / APK Distribution
-- Generate signed release APK and Android App Bundle (`.aab`).
-- Set up automatic GitHub Actions build pipeline to compile new APKs on git push.
-
----
-
-## 💬 Discussion & Next Steps
-- When ready to proceed with Phase 1 & 2 (Multi-User & Share Link), we can design the auth UI and test it without disturbing existing data.
-- When ready for Phase 3 (Android App), we can initialize the Android project and generate your first test `.apk` to install on your phone.
+### Phase 5: App Distribution & Widgets
+* Implement Android Home Screen App Widget using Jetpack Glance.
+* Set up automated GitHub Actions workflow to build release APKs and App Bundles (`.aab`).
