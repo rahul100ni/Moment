@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "713674178870",
+    "firebase_url": "https://course-com-default-rtdb.firebaseio.com",
+    "project_id": "course-com",
+    "storage_bucket": "course-com.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:713674178870:android:2e85b7b5d189e92c12f397",
+        "android_client_info": {
+          "package_name": "com.vakya.focusbuddy"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCo4F78RJH3Q7alPBioanInQ3A6hQEf1pQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

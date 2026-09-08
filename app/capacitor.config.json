@@ -1,0 +1,10 @@
+{
+  "appId": "com.vakya.focusbuddy",
+  "appName": "Moment",
+  "webDir": "dist",
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  }
+}

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en" class="bg-black">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>Moment</title>
+    <script>
+      window.onerror = function(msg, url, line, col, error) {
+        var errDiv = document.getElementById('debug-error');
+        if (!errDiv) {
+          errDiv = document.createElement('div');
+          errDiv.id = 'debug-error';
+          errDiv.style = 'position:fixed;top:0;left:0;right:0;bottom:0;background:#111;color:#ff6b6b;padding:24px;font-family:monospace;font-size:13px;z-index:999999;overflow:auto;';
+          document.body ? document.body.appendChild(errDiv) : document.documentElement.appendChild(errDiv);
+        }
+        errDiv.innerHTML += '<h3>App Error:</h3><p>' + msg + '</p><p>' + url + ':' + line + ':' + col + '</p><pre>' + (error && error.stack ? error.stack : '') + '</pre>';
+      };
+    </script>
+  </head>
+  <body class="bg-black text-white overflow-hidden">
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
