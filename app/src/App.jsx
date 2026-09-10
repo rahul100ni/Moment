@@ -20,39 +20,65 @@ import {
 
 const TimerNotification = registerPlugin('TimerNotification');
 
+// Guarantee Device UUID exists permanently on client
+const getOrCreateDeviceId = () => {
+  try {
+    let id = localStorage.getItem('study_buddy_device_id');
+    if (!id) {
+      id = (typeof crypto !== 'undefined' && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : 'dev_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+      localStorage.setItem('study_buddy_device_id', id);
+    }
+    return id;
+  } catch (_) {
+    return 'dev_fallback';
+  }
+};
+
 function App() {
-  const [isPaired, setIsPaired] = useState(!!localStorage.getItem('study_buddy_room'));
+  const [roomId, setRoomId] = useState(() => localStorage.getItem('study_buddy_room') || null);
   const [activeTab, setActiveTab] = useState('focus'); // 'focus' | 'sync'
   const [partnerStats, setPartnerStats] = useState(null);
+  const [roomMembers, setRoomMembers] = useState(null);
 
   useEffect(() => {
-    if (!isPaired) return;
+    getOrCreateDeviceId();
+  }, []);
+
+  useEffect(() => {
+    if (!roomId || roomId === 'solo') {
+      setPartnerStats(null);
+      setRoomMembers(null);
+      return;
+    }
     
     // Persistent listener across the entire app lifecycle
-    const roomId = localStorage.getItem('study_buddy_room');
-    const myId = localStorage.getItem('study_buddy_device_id');
-    
-    if (!roomId) return;
+    const myId = getOrCreateDeviceId();
 
     // Listen to the entire members node to find the partner
     const membersRef = ref(db, `rooms/${roomId}/members`);
     const unsubscribe = onValue(membersRef, (snapshot) => {
       if (snapshot.exists()) {
         const members = snapshot.val();
+        setRoomMembers(members);
         // Find the member that is NOT me
         const partnerId = Object.keys(members).find(id => id !== myId);
-        if (partnerId && members[partnerId].liveStats) {
+        if (partnerId && members[partnerId]?.liveStats) {
           setPartnerStats(members[partnerId].liveStats);
         } else {
           setPartnerStats(null);
         }
+      } else {
+        setRoomMembers(null);
+        setPartnerStats(null);
       }
     }, (err) => {
       console.error("Firebase sync error:", err);
     });
 
     return () => unsubscribe();
-  }, [isPaired]);
+  }, [roomId]);
 
   useEffect(() => {
     // Initialize OneSignal Push Notifications using the reliable v3 Cordova API
@@ -342,12 +368,12 @@ function App() {
 
   const isPartnerStudying = !!partnerStats?.timerRunning;
 
-  if (!isPaired) {
+  if (!roomId) {
     return (
       <Lobby 
         onPairSuccess={(code) => {
           localStorage.setItem('study_buddy_room', code);
-          setIsPaired(true);
+          setRoomId(code);
         }} 
       />
     );
@@ -359,10 +385,19 @@ function App() {
       {/* Main Content Area */}
       <main className="flex-1 overflow-hidden relative">
         <div className={`h-full w-full ${activeTab === 'focus' ? 'block animate-tab-in' : 'hidden'}`}>
-          <FocusTab partnerStats={partnerStats} isPartnerStudying={isPartnerStudying} />
+          <FocusTab partnerStats={partnerStats} isPartnerStudying={isPartnerStudying} roomId={roomId} />
         </div>
         <div className={`h-full w-full ${activeTab === 'sync' ? 'block animate-tab-in' : 'hidden'}`}>
-          <LiveSyncTab partnerStats={partnerStats} isPartnerStudying={isPartnerStudying} />
+          <LiveSyncTab 
+            roomId={roomId}
+            roomMembers={roomMembers}
+            partnerStats={partnerStats} 
+            isPartnerStudying={isPartnerStudying} 
+            onConnectPartner={() => {
+              localStorage.removeItem('study_buddy_room');
+              setRoomId(null);
+            }}
+          />
         </div>
       </main>
 

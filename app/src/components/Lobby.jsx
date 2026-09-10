@@ -173,6 +173,19 @@ export default function Lobby({ onPairSuccess }) {
                 <p className="text-gray-400 text-xs mt-0.5">Enter a 6-digit code</p>
               </div>
             </button>
+
+            <div className="pt-3">
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic();
+                  onPairSuccess('solo');
+                }}
+                className="w-full py-3.5 rounded-xl border border-white/10 text-gray-400 hover:text-white text-xs font-semibold tracking-wide transition-colors active:scale-98"
+              >
+                Continue Solo (Connect Partner Later)
+              </button>
+            </div>
           </div>
         )}
 
@@ -182,21 +195,32 @@ export default function Lobby({ onPairSuccess }) {
         {view === 'create' && (
           <div className="w-full flex flex-col items-center animate-tab-in">
             <p className="text-gray-400 text-sm mb-3">Your Room Code</p>
-            <div className="glass-panel px-8 py-4 rounded-2xl mb-8 relative">
+            <div className="glass-panel px-8 py-4 rounded-2xl mb-6 relative">
               <div className="absolute inset-0 border border-primary/30 rounded-2xl animate-pulse"></div>
               <h2 className="text-4xl font-mono tracking-widest text-white font-bold">{roomCode}</h2>
             </div>
             
-            <div className="flex items-center gap-3 text-primary mb-12">
+            <div className="flex items-center gap-3 text-primary mb-8">
               <Loader2 className="w-5 h-5 animate-spin" />
               <span className="text-sm font-medium tracking-wide">Waiting for partner...</span>
             </div>
 
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic();
+                onPairSuccess(roomCode);
+              }}
+              className="w-full py-3.5 rounded-xl bg-primary/15 border border-primary/35 text-white font-semibold text-xs tracking-wider uppercase mb-3 active:scale-95 transition-transform"
+            >
+              Start Focusing While Waiting →
+            </button>
+
             <button 
               onClick={() => { triggerHaptic(); setView('select'); }}
-              className="text-gray-500 text-sm font-medium py-2 px-4 hover:text-white transition-colors"
+              className="text-gray-500 text-xs font-medium py-2 px-4 hover:text-white transition-colors"
             >
-              Cancel
+              Cancel Room
             </button>
           </div>
         )}

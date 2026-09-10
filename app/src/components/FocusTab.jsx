@@ -6,7 +6,9 @@ import { LocalNotifications } from '@capacitor/local-notifications';
 import { scheduleTaskReminder, cancelTaskReminder, scheduleDailyMotivational, cancelDailyMotivational } from '../utils/taskNotifications';
 import TaskReminderModal from './TaskReminderModal';
 import StatsModal from './StatsModal';
-import { commitSessionDelta, commitSessionComplete, commitTaskCompleted, commitTaskUncompleted } from '../utils/statsManager';
+import { commitSessionDelta, commitSessionComplete, commitTaskCompleted, commitTaskUncompleted, getHistory } from '../utils/statsManager';
+import { ref, update } from 'firebase/database';
+import { db } from '../firebase';
 
 const TimerNotification = registerPlugin('TimerNotification');
 
@@ -109,7 +111,7 @@ function AlertRow({ label, sublabel, value, hapticsEnabled, onChange }) {
   );
 }
 
-export default function FocusTab({ partnerStats, isPartnerStudying }) {
+export default function FocusTab({ partnerStats, isPartnerStudying, roomId }) {
   // ── Local Stats ──────────────────────────────────────────────────────────────
   const [localStats, setLocalStats] = useState(() => {
     try {
@@ -268,6 +270,61 @@ export default function FocusTab({ partnerStats, isPartnerStudying }) {
   useEffect(() => localStorage.setItem('study_buddy_tasks',  JSON.stringify(tasks)),    [tasks]);
   useEffect(() => localStorage.setItem('focusSettings',       JSON.stringify(settings)), [settings]);
   useEffect(() => localStorage.setItem('study_buddy_stats',   JSON.stringify(localStats)), [localStats]);
+
+  // ── Firebase Live Sync (Mutual Co-Study) ──────────────────────────────────────
+  useEffect(() => {
+    const targetRoom = roomId || localStorage.getItem('study_buddy_room');
+    const myId = localStorage.getItem('study_buddy_device_id');
+    if (!targetRoom || targetRoom === 'solo' || !myId) return;
+
+    const timeout = setTimeout(() => {
+      // Calculate current streak
+      const history = getHistory();
+      let streak = 0;
+      if (history && history.length > 0) {
+        let i = history.length - 1;
+        const msPerDay = 1000 * 60 * 60 * 24;
+        let expectedDate = new Date();
+        expectedDate.setHours(0, 0, 0, 0);
+        
+        const lastEntry = new Date(history[i].date);
+        lastEntry.setHours(0, 0, 0, 0);
+        
+        const diffDays = Math.round((expectedDate - lastEntry) / msPerDay);
+        if (diffDays <= 1) {
+          expectedDate = lastEntry;
+          while (i >= 0) {
+            const entryDate = new Date(history[i].date);
+            entryDate.setHours(0, 0, 0, 0);
+            if (expectedDate.getTime() === entryDate.getTime()) {
+              streak++;
+              expectedDate = new Date(expectedDate.getTime() - msPerDay);
+              i--;
+            } else {
+              break;
+            }
+          }
+        }
+      }
+
+      // Identify active task or focus label
+      const incompleteTask = tasks.find(t => !t.done);
+      const activeTaskText = incompleteTask ? incompleteTask.text : (activeMode === 'FOCUS' ? 'Deep Focus' : (MODES[activeMode]?.label || 'Resting'));
+
+      update(ref(db, `rooms/${targetRoom}/members/${myId}/liveStats`), {
+        timerRunning: running && activeMode === 'FOCUS',
+        activeMode,
+        activeTask: activeTaskText,
+        todayStudySeconds: localStats.todaySeconds || 0,
+        completedTasks: tasks.filter(t => t.done).length, // BUG C FIXED: use t.done, not t.completed
+        totalTasks: tasks.length,
+        streak: streak,
+        lastUpdated: Date.now(),
+      }).catch(err => console.warn('[Firebase Sync]', err));
+    }, 1500);
+
+    return () => clearTimeout(timeout);
+  }, [roomId, running, activeMode, localStats.todaySeconds, tasks]);
 
   // ── On-mount catch-up: if app was closed while timer was running ──────────────
   useEffect(() => {
