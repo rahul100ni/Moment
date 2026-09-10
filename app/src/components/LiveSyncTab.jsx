@@ -1,12 +1,56 @@
 import { useState, useEffect } from 'react';
 import { ref, onValue } from 'firebase/database';
 import { db } from '../firebase';
-import { Edit2, Check } from 'lucide-react';
+import { Edit2, Check, Flame, Target, Trophy } from 'lucide-react';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import VersionManager from './VersionManager';
 
-export default function LiveSyncTab({ partnerStats }) {
-  const [internalStats, setInternalStats] = useState(null);
+const formatTime = (secs) => {
+  if (!secs) return '0h 00m';
+  const hrs = Math.floor(secs / 3600);
+  const mins = Math.floor((secs % 3600) / 60);
+  return `${hrs}h ${mins.toString().padStart(2, '0')}m`;
+};
+
+function ProgressRing({ percentage, colorClass, label, sublabel, isGlowing }) {
+  const radius = 40;
+  const circumference = 2 * Math.PI * radius;
+  // Ensure percentage is between 0 and 100
+  const safePercentage = Math.min(100, Math.max(0, percentage));
+  const offset = circumference - (safePercentage / 100) * circumference;
+  
+  return (
+    <div className={`relative flex flex-col items-center transition-all duration-700 ${isGlowing ? 'scale-105' : 'scale-100'}`}>
+      <div className="relative w-28 h-28 flex items-center justify-center mb-3">
+        {/* Glow effect */}
+        {isGlowing && (
+          <div className={`absolute inset-0 rounded-full blur-xl opacity-30 ${colorClass.replace('text-', 'bg-')}`}></div>
+        )}
+        <svg className="w-full h-full transform -rotate-90 relative z-10">
+          <circle cx="56" cy="56" r={radius} className="stroke-white/10" strokeWidth="8" fill="none" />
+          <circle 
+            cx="56" 
+            cy="56" 
+            r={radius} 
+            className={`stroke-current ${colorClass} transition-all duration-1000 ease-in-out`} 
+            strokeWidth="8" 
+            fill="none" 
+            strokeDasharray={circumference} 
+            strokeDashoffset={offset} 
+            strokeLinecap="round" 
+          />
+        </svg>
+        <div className="absolute flex flex-col items-center justify-center z-20">
+          <span className="text-[10px] font-bold tracking-widest text-gray-500 uppercase mb-0.5">{sublabel}</span>
+          <span className="text-lg font-bold text-white tracking-tight">{label}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function LiveSyncTab() {
+  const [roomMembers, setRoomMembers] = useState(null);
   const [timedOut, setTimedOut] = useState(false);
   const [partnerName, setPartnerName] = useState(() => localStorage.getItem('study_buddy_partner_name') || 'Partner');
   const [isEditingName, setIsEditingName] = useState(false);
@@ -26,33 +70,23 @@ export default function LiveSyncTab({ partnerStats }) {
   };
 
   useEffect(() => {
-    if (partnerStats) return;
     let timeout;
     const roomId = localStorage.getItem('study_buddy_room');
-    const myId = localStorage.getItem('study_buddy_device_id');
     if (!roomId) return;
     
     const membersRef = ref(db, `rooms/${roomId}/members`);
     const unsubscribe = onValue(membersRef, (snapshot) => {
       clearTimeout(timeout);
       if (snapshot.exists()) {
-        const members = snapshot.val();
-        const partnerId = Object.keys(members).find(id => id !== myId);
-        if (partnerId && members[partnerId].liveStats) {
-          setInternalStats(members[partnerId].liveStats);
-        } else {
-          setInternalStats({});
-        }
+        setRoomMembers(snapshot.val());
       } else {
-        setInternalStats({});
+        setRoomMembers(null);
       }
       setTimedOut(false);
     });
     timeout = setTimeout(() => setTimedOut(true), 10000);
     return () => { unsubscribe(); clearTimeout(timeout); };
-  }, [partnerStats]);
-
-  const stats = partnerStats || internalStats;
+  }, []);
 
   const triggerHaptic = (style = ImpactStyle.Light) => {
     try {
@@ -71,40 +105,35 @@ export default function LiveSyncTab({ partnerStats }) {
     triggerHaptic(ImpactStyle.Light);
   };
 
-  const formatTime = (secs) => {
-    if (!secs) return '0:00';
-    const hrs = Math.floor(secs / 3600);
-    const mins = Math.floor((secs % 3600) / 60);
-    if (hrs > 0) return `${hrs}h ${mins.toString().padStart(2, '0')}m`;
-    return `${mins}m`;
-  };
+  // ── Derived state ────────────────────────────────────────────────────────────
+  const myId = localStorage.getItem('study_buddy_device_id');
+  const partnerId = Object.keys(roomMembers || {}).find(id => id !== myId);
+  
+  const myStats = roomMembers?.[myId]?.liveStats || {};
+  const partnerStats = roomMembers?.[partnerId]?.liveStats || {};
 
-  const formatSubject = (id) => {
-    if (!id) return 'Nothing yet';
-    const map = {
-      'engmaths': 'Engineering Maths',
-      'algorithms': 'Algorithms',
-      'toc': 'Theory of Computation',
-      'os': 'Operating Systems',
-      'dbms': 'Database Management',
-      'cn': 'Computer Networks',
-      'ds': 'Data Structures',
-      'aptitude': 'General Aptitude',
-      'digital': 'Digital Logic',
-      'coa': 'Computer Org & Arch',
-      'compiler': 'Compiler Design'
-    };
-    return map[id] || id.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-  };
+  const myFocusing = !!myStats.timerRunning;
+  const partnerFocusing = !!partnerStats.timerRunning;
+  const bothFocusing = myFocusing && partnerFocusing;
+
+  const mySecs = myStats.todayStudySeconds || 0;
+  const partnerSecs = partnerStats.todayStudySeconds || 0;
+  const maxSecs = Math.max(mySecs, partnerSecs, 1); // Avoid division by 0
+  
+  const myTasks = myStats.completedTasks || 0;
+  const partnerTasks = partnerStats.completedTasks || 0;
+
+  const myStreak = myStats.streak || 0;
+  const partnerStreak = partnerStats.streak || 0;
 
   // ── Loading / Offline states ────────────────────────────────────────────────
-  if (!stats) {
+  if (!roomMembers) {
     return (
       <div className="flex flex-col h-full w-full items-center justify-center relative bg-background">
         {timedOut ? (
           <div className="flex flex-col items-center px-8 text-center">
             <div className="w-14 h-14 rounded-2xl bg-surfaceHighlight border border-white/10 flex items-center justify-center mb-5">
-              <span className="text-2xl">{"\u{1F4F5}"}</span>
+              <span className="text-2xl">📡</span>
             </div>
             <p className="text-white font-bold text-lg tracking-tight">Can't reach {partnerName}</p>
             <p className="text-gray-500 text-sm mt-1.5">Check your internet connection</p>
@@ -112,7 +141,7 @@ export default function LiveSyncTab({ partnerStats }) {
               onClick={() => {
                 triggerHaptic(ImpactStyle.Light);
                 setTimedOut(false);
-                setInternalStats(null);
+                setRoomMembers(null);
               }}
               className="mt-7 px-6 py-2.5 rounded-full bg-surfaceHighlight border border-white/10 text-gray-300 text-sm font-semibold active:scale-95 transition-transform"
             >
@@ -122,205 +151,176 @@ export default function LiveSyncTab({ partnerStats }) {
         ) : (
           <div className="flex flex-col items-center">
             <div className="w-12 h-12 border-4 border-surfaceHighlight border-t-primary rounded-full animate-spin" />
-            <p className="text-gray-500 font-medium mt-6 tracking-widest uppercase text-xs">Connecting…</p>
+            <p className="text-gray-500 font-medium mt-6 tracking-widest uppercase text-xs">Syncing Space…</p>
           </div>
         )}
-        <div className="absolute bottom-10 text-center w-full">
-          <button onClick={handleVersionClick} className="text-[10px] text-gray-700 font-mono tracking-widest bg-transparent border-none focus:outline-none select-none">
-            Model: M-v1.0.24
-          </button>
-        </div>
-        {showVersionManager && <VersionManager onClose={() => setShowVersionManager(false)} />}
       </div>
     );
   }
 
-  // ── Derived state ────────────────────────────────────────────────────────────
-  const isFocusing = !!stats.timerRunning;
-  const todaySecs = stats.todayStudySeconds || 0;
-  const streak = stats.streak || 0;
-
-  let totalContentMins = 0;
-  let totalLecturesDone = 0;
-  let otherTopics = [];
-
-  if (stats.subjects) {
-    Object.entries(stats.subjects).forEach(([id, sub]) => {
-      totalContentMins += (sub.todayCourseMins || 0);
-      totalLecturesDone += (sub.completedToday?.length || 0);
-      if (id !== stats.activeSubject && ((sub.todayStudySecs > 0) || (sub.completedToday?.length > 0))) {
-        otherTopics.push(formatSubject(id));
-      }
-    });
-  }
-
-  // Dynamic contextual message — the "warmth" line per the plan
-  const getContextMessage = () => {
-    const hrs = todaySecs / 3600;
-    if (isFocusing) {
-      if (hrs >= 2) return 'Deep in it.';
-      if (hrs < 0.5) return 'Just getting started.';
-      return 'In the zone.';
-    } else {
-      if (hrs >= 3) return 'Earned the break.';
-      if (hrs > 0) return 'Taking a breather.';
-      return 'Not started yet.';
-    }
-  };
-
   // ── Main render ──────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-full w-full px-5 pt-10 pb-20 max-w-md mx-auto relative overflow-y-auto no-scrollbar bg-background">
-
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6 px-1">
-        <div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">Live Sync</h1>
-          {isEditingName ? (
-            <div className="flex items-center space-x-2 mt-2 bg-surfaceHighlight p-1 pl-3 rounded-full border border-primary/30 w-max">
-              <span className="text-gray-400 text-xs">Connected to</span>
-              <input
-                autoFocus
-                value={tempName}
-                onChange={(e) => setTempName(e.target.value)}
-                className="bg-transparent text-white font-bold outline-none w-24 text-xs"
-                onKeyDown={(e) => e.key === 'Enter' && saveName()}
-              />
-              <button onClick={saveName} className="p-1 bg-primary text-black rounded-full">
-                <Check size={12} strokeWidth={3} />
-              </button>
-            </div>
-          ) : (
-            <div className="flex items-center space-x-1.5 mt-1.5 group cursor-pointer w-max" onClick={() => setIsEditingName(true)}>
-              <p className="text-gray-400 text-xs font-medium">
-                Connected to <span className="text-white font-bold">{partnerName}</span>
-              </p>
-              <Edit2 size={11} className="text-gray-600 group-hover:text-primary transition-colors" />
-            </div>
-          )}
-        </div>
-
-        {/* Live Status Pill */}
-        <div className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-full border transition-all duration-700 ease-in-out ${
-          isFocusing
-            ? 'bg-accent/15 border-accent/40 text-accent'
-            : 'bg-surfaceHighlight border-white/5 text-gray-400'
-        }`}>
-          <span className={`w-2 h-2 rounded-full transition-colors duration-700 ease-in-out ${isFocusing ? 'bg-accent animate-pulse' : 'bg-gray-500'}`} />
-          <span className="text-xs font-bold tracking-widest uppercase transition-colors duration-700 ease-in-out">
-            {isFocusing ? 'Focusing' : 'Away'}
-          </span>
-        </div>
-      </div>
-
-      {/* ── Hero: Breathing Avatar + Context ──────────────────────────────────── */}
-      <div className="relative flex flex-col items-center py-8 mb-4">
-        {/* Ambient glow — breathes when focusing */}
-        <div className={`absolute inset-0 rounded-3xl transition-all duration-1000 ${
-          isFocusing ? 'bg-accent/8 blur-2xl' : 'bg-transparent'
-        }`} />
-
-        {/* Avatar ring — pulses when focusing */}
-        <div className="relative">
-          {isFocusing && (
-            <>
-              <div className="absolute inset-0 rounded-3xl bg-accent/20 animate-ping rounded-[28px]" style={{ animationDuration: '2.5s' }} />
-              <div className="absolute inset-0 rounded-3xl bg-accent/10 animate-ping rounded-[28px]" style={{ animationDuration: '3.5s', animationDelay: '0.5s' }} />
-            </>
-          )}
-          <div className={`relative w-24 h-24 rounded-[28px] flex items-center justify-center text-5xl border-2 transition-all duration-700 ${
-            isFocusing
-              ? 'border-accent/60 bg-accent/10 shadow-lg shadow-accent/20'
-              : 'border-white/10 bg-surfaceHighlight'
-          }`}>
-            {"\u{1F468}\u{200D}\u{1F4BB}"}
-          </div>
-          {isFocusing && (
-            <span className="absolute -bottom-1 -right-1 w-5 h-5 bg-accent rounded-full border-2 border-background animate-pulse" />
-          )}
-        </div>
-
-        {/* Name + Context message */}
-        <div className="mt-4 text-center relative z-10">
-          <p className="text-white font-bold text-xl tracking-tight">
-            {isFocusing ? `${partnerName} is studying` : `${partnerName} is away`}
-          </p>
-          <p className="text-gray-400 text-sm mt-1 font-medium">{getContextMessage()}</p>
-        </div>
-      </div>
-
-      {/* ── Current Focus Banner ────────────────────────────────────────────────── */}
-      <div className={`rounded-2xl px-5 py-4 mb-4 border transition-all duration-500 ${
-        isFocusing
-          ? 'bg-primary/10 border-primary/25'
-          : 'bg-surfaceHighlight border-white/5'
-      }`}>
-        <p className="text-gray-400 text-[10px] font-bold uppercase tracking-widest mb-1">Currently Studying</p>
-        <p className={`text-lg font-bold tracking-tight truncate ${isFocusing ? 'text-white' : 'text-gray-300'}`}>
-          {formatSubject(stats.activeSubject)}
-        </p>
-      </div>
-
-      {/* ── Stats Row ─────────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-3 gap-3 mb-4">
-        <div className="bg-surfaceHighlight rounded-2xl p-4 border border-white/5 flex flex-col">
-          <p className="text-gray-500 text-[9px] font-bold uppercase tracking-widest mb-2">Time in Moment</p>
-          <p className="text-white font-mono font-bold text-lg leading-none">{formatTime(todaySecs)}</p>
-        </div>
-        <div className="bg-surfaceHighlight rounded-2xl p-4 border border-white/5 flex flex-col">
-          <p className="text-gray-500 text-[9px] font-bold uppercase tracking-widest mb-2">Content</p>
-          <p className="text-white font-mono font-bold text-lg leading-none">{formatTime(totalContentMins * 60)}</p>
-        </div>
-        <div className="bg-surfaceHighlight rounded-2xl p-4 border border-white/5 flex flex-col">
-          <p className="text-gray-500 text-[9px] font-bold uppercase tracking-widest mb-2">Streak</p>
-          <div className="flex items-center gap-1">
-            <span className="text-base leading-none">{"\u{1F525}"}</span>
-            <p className="text-white font-mono font-bold text-lg leading-none">{streak}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Other Topics Studied ─────────────────────────────────────────────── */}
-      {otherTopics.length > 0 && (
-        <div className="mb-4">
-          <p className="text-gray-500 text-[10px] font-bold uppercase tracking-widest mb-2 px-1">Also studied today</p>
-          <div className="flex flex-wrap gap-2">
-            {otherTopics.map((topic, i) => (
-              <span key={i} className="px-3 py-1.5 rounded-full bg-surfaceHighlight text-gray-300 text-xs font-medium border border-white/5">
-                {topic}
-              </span>
-            ))}
-          </div>
+    <div className={`flex flex-col h-full w-full px-5 pt-10 pb-20 max-w-md mx-auto relative overflow-y-auto no-scrollbar transition-colors duration-1000 ${bothFocusing ? 'bg-[#05100a]' : 'bg-background'}`}>
+      
+      {/* Background Breathing Glow when Both Focusing */}
+      {bothFocusing && (
+        <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden flex items-center justify-center">
+          <div className="absolute w-[150%] h-[150%] bg-accent/5 rounded-full blur-[120px] animate-pulse" style={{ animationDuration: '4s' }}></div>
         </div>
       )}
 
-      {/* ── Footer / Hidden Version Trigger ──────────────────────────────────── */}
-      <div className="mt-auto pt-4 pb-6 flex flex-col items-center space-y-4 opacity-50">
-        <button
-          onClick={() => {
-            if (window.confirm("Disconnect from partner?")) {
-              localStorage.removeItem('study_buddy_room');
-              window.location.reload();
-            }
-          }}
-          className="text-xs text-red-400 font-medium tracking-wider uppercase border border-red-400/20 px-4 py-2 rounded-lg"
-        >
-          Disconnect
-        </button>
+      <div className="relative z-10">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8 px-1">
+          <div>
+            <h1 className="text-3xl font-bold text-white tracking-tight">Co-Study Space</h1>
+            {isEditingName ? (
+              <div className="flex items-center space-x-2 mt-2 bg-surfaceHighlight p-1 pl-3 rounded-full border border-primary/30 w-max">
+                <span className="text-gray-400 text-xs">Partner:</span>
+                <input
+                  autoFocus
+                  value={tempName}
+                  onChange={(e) => setTempName(e.target.value)}
+                  className="bg-transparent text-white font-bold outline-none w-24 text-xs"
+                  onKeyDown={(e) => e.key === 'Enter' && saveName()}
+                />
+                <button onClick={saveName} className="p-1 bg-primary text-black rounded-full">
+                  <Check size={12} strokeWidth={3} />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center space-x-1.5 mt-1.5 group cursor-pointer w-max" onClick={() => setIsEditingName(true)}>
+                <p className="text-gray-400 text-xs font-medium">
+                  Partner: <span className="text-white font-bold">{partnerName}</span>
+                </p>
+                <Edit2 size={11} className="text-gray-600 group-hover:text-primary transition-colors" />
+              </div>
+            )}
+          </div>
 
-        <div className="flex items-center space-x-1.5 opacity-60">
-          <div className="w-1 h-1 rounded-full bg-primary" />
-          <p className="text-[9px] font-bold text-white tracking-[0.2em] uppercase">Live Cloud Sync</p>
+          {/* Joint Status Pill */}
+          <div className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-full border transition-all duration-700 ease-in-out ${
+            bothFocusing
+              ? 'bg-accent/15 border-accent/40 text-accent shadow-glow-accent'
+              : myFocusing || partnerFocusing
+                ? 'bg-primary/15 border-primary/40 text-primary'
+                : 'bg-surfaceHighlight border-white/5 text-gray-400'
+          }`}>
+            <span className={`w-2 h-2 rounded-full transition-colors duration-700 ease-in-out ${bothFocusing ? 'bg-accent animate-pulse' : (myFocusing || partnerFocusing) ? 'bg-primary animate-pulse' : 'bg-gray-500'}`} />
+            <span className="text-xs font-bold tracking-widest uppercase transition-colors duration-700 ease-in-out">
+              {bothFocusing ? 'Locked In' : myFocusing ? 'You Focusing' : partnerFocusing ? 'Partner Focusing' : 'Away'}
+            </span>
+          </div>
         </div>
-        <button
-          onClick={handleVersionClick}
-          className="text-[10px] text-gray-500 font-mono tracking-widest bg-transparent border-none focus:outline-none select-none"
-        >
-          Model: M-v1.0.24
-        </button>
-      </div>
 
-      {showVersionManager && <VersionManager onClose={() => setShowVersionManager(false)} />}
+        {/* ── Today's Focus Rings ────────────────────────────────────────────── */}
+        <div className="glass-panel rounded-3xl p-6 mb-4 relative overflow-hidden">
+          <p className="text-gray-400 text-[10px] font-bold uppercase tracking-widest mb-6 text-center">Today's Focus Velocity</p>
+          <div className="flex justify-around items-end">
+            <div className="flex flex-col items-center">
+              <ProgressRing 
+                percentage={(mySecs / maxSecs) * 100} 
+                colorClass="text-primary" 
+                label={formatTime(mySecs)} 
+                sublabel="You"
+                isGlowing={myFocusing}
+              />
+              {mySecs > partnerSecs && mySecs > 0 && <Trophy size={14} className="text-yellow-500 mt-3 animate-bounce" />}
+            </div>
+
+            <div className="w-px h-24 bg-white/5 mx-2"></div>
+
+            <div className="flex flex-col items-center">
+              <ProgressRing 
+                percentage={(partnerSecs / maxSecs) * 100} 
+                colorClass="text-accent" 
+                label={formatTime(partnerSecs)} 
+                sublabel={partnerName}
+                isGlowing={partnerFocusing}
+              />
+              {partnerSecs > mySecs && partnerSecs > 0 && <Trophy size={14} className="text-yellow-500 mt-3 animate-bounce" />}
+            </div>
+          </div>
+        </div>
+
+        {/* ── Tasks & Streaks ───────────────────────────────────────────────── */}
+        <div className="grid grid-cols-2 gap-4 mb-4">
+          
+          {/* Tasks Completed Bar */}
+          <div className="glass-panel rounded-3xl p-5 flex flex-col">
+            <div className="flex items-center gap-2 mb-4">
+              <Target size={16} className="text-blue-400" />
+              <p className="text-gray-400 text-[10px] font-bold uppercase tracking-widest">Tasks Done</p>
+            </div>
+            
+            <div className="space-y-4 mt-auto">
+              <div>
+                <div className="flex justify-between text-xs mb-1.5">
+                  <span className="text-gray-300 font-medium">You</span>
+                  <span className="text-white font-bold">{myTasks}</span>
+                </div>
+                <div className="w-full bg-background rounded-full h-1.5 overflow-hidden">
+                  <div className="bg-primary h-full rounded-full transition-all duration-1000" style={{ width: `${Math.min(100, (myTasks / Math.max(1, Math.max(myTasks, partnerTasks))) * 100)}%` }}></div>
+                </div>
+              </div>
+              
+              <div>
+                <div className="flex justify-between text-xs mb-1.5">
+                  <span className="text-gray-300 font-medium">{partnerName}</span>
+                  <span className="text-white font-bold">{partnerTasks}</span>
+                </div>
+                <div className="w-full bg-background rounded-full h-1.5 overflow-hidden">
+                  <div className="bg-accent h-full rounded-full transition-all duration-1000" style={{ width: `${Math.min(100, (partnerTasks / Math.max(1, Math.max(myTasks, partnerTasks))) * 100)}%` }}></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Co-Study Streaks */}
+          <div className="glass-panel rounded-3xl p-5 flex flex-col items-center justify-center text-center relative overflow-hidden">
+            {bothFocusing && <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-accent/10 opacity-50"></div>}
+            <Flame size={24} className={`${bothFocusing ? 'text-orange-500 animate-pulse' : 'text-gray-500'} mb-2`} />
+            <p className="text-gray-400 text-[10px] font-bold uppercase tracking-widest mb-1">Co-Study Streak</p>
+            <div className="flex items-end gap-1">
+              <span className="text-3xl font-black text-white">{Math.min(myStreak, partnerStreak)}</span>
+              <span className="text-gray-500 font-medium text-sm mb-1">days</span>
+            </div>
+            {myStreak !== partnerStreak && (
+              <p className="text-[9px] text-gray-500 mt-2 font-medium">
+                (You: {myStreak} | {partnerName}: {partnerStreak})
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* ── Footer / Hidden Version Trigger ──────────────────────────────────── */}
+        <div className="mt-8 pt-4 pb-6 flex flex-col items-center space-y-4 opacity-50">
+          <button
+            onClick={() => {
+              if (window.confirm("Disconnect from partner?")) {
+                localStorage.removeItem('study_buddy_room');
+                window.location.reload();
+              }
+            }}
+            className="text-xs text-red-400 font-medium tracking-wider uppercase border border-red-400/20 px-4 py-2 rounded-lg active:scale-95 transition-transform"
+          >
+            Leave Room
+          </button>
+
+          <div className="flex items-center space-x-1.5 opacity-60">
+            <div className="w-1 h-1 rounded-full bg-primary" />
+            <p className="text-[9px] font-bold text-white tracking-[0.2em] uppercase">Multiplayer Sync Active</p>
+          </div>
+          <button
+            onClick={handleVersionClick}
+            className="text-[10px] text-gray-500 font-mono tracking-widest bg-transparent border-none focus:outline-none select-none"
+          >
+            Model: Moment-v2.0.0
+          </button>
+        </div>
+
+        {showVersionManager && <VersionManager onClose={() => setShowVersionManager(false)} />}
+      </div>
     </div>
   );
 }
