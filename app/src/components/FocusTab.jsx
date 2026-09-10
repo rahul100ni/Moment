@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Play, Pause, RotateCcw, Settings2, Plus, Trash2, X, ChevronRight, BarChart2, FastForward, Repeat, CheckCircle2, Bell, ChevronDown } from 'lucide-react';
+import { Play, Pause, RotateCcw, Settings2, Plus, Trash2, X, ChevronRight, BarChart2, FastForward, Repeat, CheckCircle2, Bell, ChevronDown, Cloud, Upload, Download } from 'lucide-react';
 import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
 import { registerPlugin } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
@@ -9,6 +9,7 @@ import StatsModal from './StatsModal';
 import { commitSessionDelta, commitSessionComplete, commitTaskCompleted, commitTaskUncompleted, getHistory } from '../utils/statsManager';
 import { ref, update } from 'firebase/database';
 import { db } from '../firebase';
+import { backupUserData, restoreUserData, linkGoogleAccount, getLastBackupTime, signOutUser } from '../utils/cloudSync';
 
 const TimerNotification = registerPlugin('TimerNotification');
 
@@ -111,7 +112,15 @@ function AlertRow({ label, sublabel, value, hapticsEnabled, onChange }) {
   );
 }
 
-export default function FocusTab({ partnerStats, isPartnerStudying, roomId }) {
+export default function FocusTab({ partnerStats, isPartnerStudying, roomId, currentUser }) {
+  // ── Cloud Backup & Auth State ───────────────────────────────────────────────
+  const [backupStatus, setBackupStatus] = useState(() => getLastBackupTime());
+  const [isBackingUp, setIsBackingUp] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [backupMsg, setBackupMsg] = useState('');
+
+  const isGoogleUser = !!(currentUser && !currentUser.isAnonymous && currentUser.email);
+
   // ── Local Stats ──────────────────────────────────────────────────────────────
   const [localStats, setLocalStats] = useState(() => {
     try {
@@ -198,6 +207,61 @@ export default function FocusTab({ partnerStats, isPartnerStudying, roomId }) {
   };
   const stopAlarm = () => {
     try { TimerNotification.stopAlarm(); } catch (e) { console.warn('Native alarm stop failed', e); }
+  };
+
+  // ── Cloud Backup & Google Linking Actions ──────────────────────────────────
+  const handleManualBackup = async () => {
+    if (!currentUser?.uid) return;
+    triggerHaptic(ImpactStyle.Medium);
+    setIsBackingUp(true);
+    setBackupMsg('');
+    const res = await backupUserData(currentUser.uid);
+    setIsBackingUp(false);
+    if (res.success) {
+      setBackupStatus(res.timestamp);
+      setBackupMsg('Saved to cloud! ☁️');
+      setTimeout(() => setBackupMsg(''), 3000);
+    } else {
+      setBackupMsg('Backup failed: ' + (res.error || 'Network error'));
+    }
+  };
+
+  const handleRestore = async () => {
+    if (!currentUser?.uid) return;
+    if (!window.confirm('Restore study history from cloud? This will sync your local stats with your latest cloud snapshot.')) return;
+    triggerHaptic(ImpactStyle.Heavy);
+    setIsRestoring(true);
+    setBackupMsg('');
+    const res = await restoreUserData(currentUser.uid);
+    setIsRestoring(false);
+    if (res.success) {
+      setBackupMsg(`Restored ${res.historyCount} days of history! 🎉`);
+      try {
+        const savedStats = localStorage.getItem('study_buddy_stats');
+        if (savedStats) setLocalStats(JSON.parse(savedStats));
+        const savedTasks = localStorage.getItem('study_buddy_tasks');
+        if (savedTasks) setTasks(JSON.parse(savedTasks));
+      } catch (_) {}
+      setTimeout(() => setBackupMsg(''), 4000);
+    } else {
+      setBackupMsg(res.error || 'Restore failed');
+    }
+  };
+
+  const handleLinkGoogle = async () => {
+    triggerHaptic(ImpactStyle.Medium);
+    try {
+      setBackupMsg('Connecting to Google...');
+      const res = await linkGoogleAccount(currentUser);
+      if (res.success) {
+        setBackupMsg('Google Account Linked! 🌟');
+        if (res.user?.uid) backupUserData(res.user.uid);
+        setTimeout(() => setBackupMsg(''), 3500);
+      }
+    } catch (err) {
+      setBackupMsg(err.message || 'Google sign-in cancelled.');
+      setTimeout(() => setBackupMsg(''), 3500);
+    }
   };
 
   // ── Mode config ───────────────────────────────────────────────────────────────
@@ -333,6 +397,17 @@ export default function FocusTab({ partnerStats, isPartnerStudying, roomId }) {
 
     return () => clearTimeout(timeout);
   }, [roomId, running, activeMode, localStats.todaySeconds, tasks, settings.allowPartnerNudges, settings.allowPartnerAlarms]);
+
+  // ── Auto-Backup to Cloud (Debounced) ────────────────────────────────────────
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    const t = setTimeout(() => {
+      backupUserData(currentUser.uid).then((res) => {
+        if (res?.success) setBackupStatus(res.timestamp);
+      });
+    }, 4000);
+    return () => clearTimeout(t);
+  }, [localStats.todaySeconds, tasks.length, currentUser?.uid]);
 
   // ── On-mount catch-up: if app was closed while timer was running ──────────────
   useEffect(() => {
@@ -1091,6 +1166,80 @@ export default function FocusTab({ partnerStats, isPartnerStudying, roomId }) {
                 Accumulated across all sessions today · Tap for full analytics
               </p>
             </button>
+
+            {/* ── Account & Cloud Persistence ─────────────────────────────── */}
+            <div className="glass-panel rounded-3xl p-5 border border-white/10 relative overflow-hidden">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-primary/20 flex items-center justify-center text-primary flex-shrink-0">
+                    <Cloud size={18} />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-xs font-bold text-white uppercase tracking-wider truncate">
+                      {isGoogleUser ? 'Cloud Account' : 'Guest Mode'}
+                    </h3>
+                    <p className="text-[11px] text-gray-400 truncate">
+                      {isGoogleUser ? currentUser.email : 'Device-only storage'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surfaceHighlight border border-white/5 text-[10px] font-semibold text-gray-400 flex-shrink-0">
+                  <span className={`w-1.5 h-1.5 rounded-full ${backupStatus ? 'bg-accent' : 'bg-gray-500'}`} />
+                  <span>{backupStatus ? 'Synced' : 'Unsynced'}</span>
+                </div>
+              </div>
+
+              {!isGoogleUser && (
+                <div className="mb-4 bg-surfaceHighlight/60 p-3.5 rounded-2xl border border-white/5">
+                  <p className="text-xs text-gray-300 leading-relaxed mb-3">
+                    Link your Google account to permanently protect your study history, streaks, and tasks across devices.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleLinkGoogle}
+                    className="w-full py-2.5 px-4 rounded-xl bg-white text-black font-semibold text-xs flex items-center justify-center gap-2 hover:bg-gray-100 active:scale-98 transition-all shadow-md"
+                  >
+                    <span>Sign in with Google</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Action Buttons: Backup & Restore */}
+              <div className="grid grid-cols-2 gap-2.5 pt-1">
+                <button
+                  type="button"
+                  disabled={isBackingUp}
+                  onClick={handleManualBackup}
+                  className="py-2.5 px-3 rounded-xl bg-surfaceHighlight hover:bg-white/10 border border-white/5 text-xs font-semibold text-gray-200 flex items-center justify-center gap-2 active:scale-95 transition-all"
+                >
+                  <Upload size={13} className="text-primary" />
+                  <span>{isBackingUp ? 'Backing up...' : 'Backup Now'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isRestoring}
+                  onClick={handleRestore}
+                  className="py-2.5 px-3 rounded-xl bg-surfaceHighlight hover:bg-white/10 border border-white/5 text-xs font-semibold text-gray-200 flex items-center justify-center gap-2 active:scale-95 transition-all"
+                >
+                  <Download size={13} className="text-accent" />
+                  <span>{isRestoring ? 'Restoring...' : 'Restore Data'}</span>
+                </button>
+              </div>
+
+              {backupMsg && (
+                <p className="text-[11px] text-primary text-center mt-3 animate-fade-in font-medium">
+                  {backupMsg}
+                </p>
+              )}
+
+              {backupStatus && !backupMsg && (
+                <p className="text-[10px] text-gray-500 text-center mt-2.5 font-mono">
+                  Last backup: {new Date(backupStatus).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </p>
+              )}
+            </div>
 
             {/* ── Timer Durations ─────────────────────────────────────────── */}
             <div className="space-y-2">

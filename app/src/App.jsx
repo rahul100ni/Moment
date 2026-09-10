@@ -8,6 +8,7 @@ import { registerPlugin } from '@capacitor/core';
 import FocusTab from './components/FocusTab';
 import LiveSyncTab from './components/LiveSyncTab';
 import Lobby from './components/Lobby';
+import { initAuth } from './utils/cloudSync';
 import {
   registerNotifActionTypes,
   scheduleDailyMotivational,
@@ -41,9 +42,16 @@ function App() {
   const [activeTab, setActiveTab] = useState('focus'); // 'focus' | 'sync'
   const [partnerStats, setPartnerStats] = useState(null);
   const [roomMembers, setRoomMembers] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
 
   useEffect(() => {
     getOrCreateDeviceId();
+    const unsubAuth = initAuth((user) => {
+      setCurrentUser(user);
+    });
+    return () => {
+      if (typeof unsubAuth === 'function') unsubAuth();
+    };
   }, []);
 
   useEffect(() => {
@@ -484,7 +492,7 @@ function App() {
       {/* Main Content Area */}
       <main className="flex-1 overflow-hidden relative">
         <div className={`h-full w-full ${activeTab === 'focus' ? 'block animate-tab-in' : 'hidden'}`}>
-          <FocusTab partnerStats={partnerStats} isPartnerStudying={isPartnerStudying} roomId={roomId} />
+          <FocusTab partnerStats={partnerStats} isPartnerStudying={isPartnerStudying} roomId={roomId} currentUser={currentUser} />
         </div>
         <div className={`h-full w-full ${activeTab === 'sync' ? 'block animate-tab-in' : 'hidden'}`}>
           <LiveSyncTab 
