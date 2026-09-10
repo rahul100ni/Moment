@@ -7,6 +7,7 @@ import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { registerPlugin } from '@capacitor/core';
 import FocusTab from './components/FocusTab';
 import LiveSyncTab from './components/LiveSyncTab';
+import Lobby from './components/Lobby';
 import {
   registerNotifActionTypes,
   scheduleDailyMotivational,
@@ -20,24 +21,38 @@ import {
 const TimerNotification = registerPlugin('TimerNotification');
 
 function App() {
+  const [isPaired, setIsPaired] = useState(!!localStorage.getItem('study_buddy_room'));
   const [activeTab, setActiveTab] = useState('focus'); // 'focus' | 'sync'
   const [partnerStats, setPartnerStats] = useState(null);
 
   useEffect(() => {
+    if (!isPaired) return;
+    
     // Persistent listener across the entire app lifecycle
-    // For commercial app: use room-based stats instead of hardcoded 'rahul'
-    const roomId = localStorage.getItem('study_buddy_room') || 'default_room';
-    const statsRef = ref(db, `rooms/${roomId}/liveStats`);
-    const unsubscribe = onValue(statsRef, (snapshot) => {
+    const roomId = localStorage.getItem('study_buddy_room');
+    const myId = localStorage.getItem('study_buddy_device_id');
+    
+    if (!roomId) return;
+
+    // Listen to the entire members node to find the partner
+    const membersRef = ref(db, `rooms/${roomId}/members`);
+    const unsubscribe = onValue(membersRef, (snapshot) => {
       if (snapshot.exists()) {
-        setPartnerStats(snapshot.val());
+        const members = snapshot.val();
+        // Find the member that is NOT me
+        const partnerId = Object.keys(members).find(id => id !== myId);
+        if (partnerId && members[partnerId].liveStats) {
+          setPartnerStats(members[partnerId].liveStats);
+        } else {
+          setPartnerStats(null);
+        }
       }
     }, (err) => {
       console.error("Firebase sync error:", err);
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [isPaired]);
 
   useEffect(() => {
     // Initialize OneSignal Push Notifications using the reliable v3 Cordova API
@@ -326,6 +341,17 @@ function App() {
   };
 
   const isPartnerStudying = !!partnerStats?.timerRunning;
+
+  if (!isPaired) {
+    return (
+      <Lobby 
+        onPairSuccess={(code) => {
+          localStorage.setItem('study_buddy_room', code);
+          setIsPaired(true);
+        }} 
+      />
+    );
+  }
 
   return (
     <div className="flex flex-col h-screen w-full bg-background overflow-hidden relative selection:bg-primary/30">

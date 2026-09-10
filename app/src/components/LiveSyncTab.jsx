@@ -28,11 +28,24 @@ export default function LiveSyncTab({ partnerStats }) {
   useEffect(() => {
     if (partnerStats) return;
     let timeout;
-    const roomId = localStorage.getItem('study_buddy_room') || 'default_room';
-    const statsRef = ref(db, `rooms/${roomId}/liveStats`);
-    const unsubscribe = onValue(statsRef, (snapshot) => {
+    const roomId = localStorage.getItem('study_buddy_room');
+    const myId = localStorage.getItem('study_buddy_device_id');
+    if (!roomId) return;
+    
+    const membersRef = ref(db, `rooms/${roomId}/members`);
+    const unsubscribe = onValue(membersRef, (snapshot) => {
       clearTimeout(timeout);
-      setInternalStats(snapshot.exists() ? snapshot.val() : {});
+      if (snapshot.exists()) {
+        const members = snapshot.val();
+        const partnerId = Object.keys(members).find(id => id !== myId);
+        if (partnerId && members[partnerId].liveStats) {
+          setInternalStats(members[partnerId].liveStats);
+        } else {
+          setInternalStats({});
+        }
+      } else {
+        setInternalStats({});
+      }
       setTimedOut(false);
     });
     timeout = setTimeout(() => setTimedOut(true), 10000);
@@ -282,8 +295,20 @@ export default function LiveSyncTab({ partnerStats }) {
       )}
 
       {/* ── Footer / Hidden Version Trigger ──────────────────────────────────── */}
-      <div className="mt-auto pt-4 flex flex-col items-center space-y-2 opacity-30">
-        <div className="flex items-center space-x-1.5">
+      <div className="mt-auto pt-4 pb-6 flex flex-col items-center space-y-4 opacity-50">
+        <button
+          onClick={() => {
+            if (window.confirm("Disconnect from partner?")) {
+              localStorage.removeItem('study_buddy_room');
+              window.location.reload();
+            }
+          }}
+          className="text-xs text-red-400 font-medium tracking-wider uppercase border border-red-400/20 px-4 py-2 rounded-lg"
+        >
+          Disconnect
+        </button>
+
+        <div className="flex items-center space-x-1.5 opacity-60">
           <div className="w-1 h-1 rounded-full bg-primary" />
           <p className="text-[9px] font-bold text-white tracking-[0.2em] uppercase">Live Cloud Sync</p>
         </div>
