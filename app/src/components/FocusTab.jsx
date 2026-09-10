@@ -162,6 +162,8 @@ export default function FocusTab({ partnerStats, isPartnerStudying, roomId }) {
         dailyRemindersEnabled: true,
         dailyReminderTimes: ['20:00', '23:00'],
         dynamicIslandEnabled: true,
+        allowPartnerNudges: true,
+        allowPartnerAlarms: false,
         ...JSON.parse(saved)
       } : {
         FOCUS: 25, SHORT_BREAK: 5, LONG_BREAK: 15, isStopwatch: false,
@@ -170,9 +172,11 @@ export default function FocusTab({ partnerStats, isPartnerStudying, roomId }) {
         dailyRemindersEnabled: true,
         dailyReminderTimes: ['20:00', '23:00'],
         dynamicIslandEnabled: true,
+        allowPartnerNudges: true,
+        allowPartnerAlarms: false,
       };
     } catch {
-      return { FOCUS: 25, SHORT_BREAK: 5, LONG_BREAK: 15, isStopwatch: false, focusAlert: 'notification', breakAlert: 'notification', hapticsEnabled: true, dailyRemindersEnabled: true, dailyReminderTimes: ['20:00', '23:00'], dynamicIslandEnabled: true };
+      return { FOCUS: 25, SHORT_BREAK: 5, LONG_BREAK: 15, isStopwatch: false, focusAlert: 'notification', breakAlert: 'notification', hapticsEnabled: true, dailyRemindersEnabled: true, dailyReminderTimes: ['20:00', '23:00'], dynamicIslandEnabled: true, allowPartnerNudges: true, allowPartnerAlarms: false };
     }
   });
 
@@ -316,15 +320,19 @@ export default function FocusTab({ partnerStats, isPartnerStudying, roomId }) {
         activeMode,
         activeTask: activeTaskText,
         todayStudySeconds: localStats.todaySeconds || 0,
-        completedTasks: tasks.filter(t => t.done).length, // BUG C FIXED: use t.done, not t.completed
+        completedTasks: tasks.filter(t => t.done).length,
         totalTasks: tasks.length,
         streak: streak,
+        privileges: {
+          allowNudges: settings.allowPartnerNudges !== false,
+          allowAlarms: !!settings.allowPartnerAlarms,
+        },
         lastUpdated: Date.now(),
       }).catch(err => console.warn('[Firebase Sync]', err));
     }, 1500);
 
     return () => clearTimeout(timeout);
-  }, [roomId, running, activeMode, localStats.todaySeconds, tasks]);
+  }, [roomId, running, activeMode, localStats.todaySeconds, tasks, settings.allowPartnerNudges, settings.allowPartnerAlarms]);
 
   // ── On-mount catch-up: if app was closed while timer was running ──────────────
   useEffect(() => {
@@ -1282,6 +1290,47 @@ export default function FocusTab({ partnerStats, isPartnerStudying, roomId }) {
                   ))}
                 </div>
               )}
+            </div>
+
+            {/* ── Partner Privileges (Consent-Driven Accountability) ─────── */}
+            <div className="space-y-2">
+              <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest px-1 mb-3">Partner Privileges</h3>
+
+              {/* Allow Nudges & Cheers */}
+              <div className="bg-surfaceHighlight rounded-3xl p-4 border border-white/5 flex items-center justify-between">
+                <div className="mr-3">
+                  <span className="font-medium text-white block">Focus Nudges & Cheers</span>
+                  <span className="text-xs text-gray-400 block mt-0.5">Allow partner to send live taps and motivation</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic(ImpactStyle.Medium);
+                    setSettings({ ...settings, allowPartnerNudges: settings.allowPartnerNudges === false });
+                  }}
+                  className={`w-14 h-8 rounded-full p-1 transition-colors duration-300 relative flex-shrink-0 ${settings.allowPartnerNudges !== false ? 'bg-primary' : 'bg-gray-700'}`}
+                >
+                  <div className={`w-6 h-6 bg-white rounded-full shadow-md transform transition-transform duration-300 ${settings.allowPartnerNudges !== false ? 'translate-x-6' : 'translate-x-0'}`} />
+                </button>
+              </div>
+
+              {/* Allow Emergency Wake-Up Alarm */}
+              <div className="bg-surfaceHighlight rounded-3xl p-4 border border-white/5 flex items-center justify-between">
+                <div className="mr-3">
+                  <span className="font-medium text-white block">Wake-Up Emergency Alarm</span>
+                  <span className="text-xs text-gray-400 block mt-0.5">Allows partner to ring your phone out loud when you're away</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic(ImpactStyle.Medium);
+                    setSettings({ ...settings, allowPartnerAlarms: !settings.allowPartnerAlarms });
+                  }}
+                  className={`w-14 h-8 rounded-full p-1 transition-colors duration-300 relative flex-shrink-0 ${settings.allowPartnerAlarms ? 'bg-amber-500' : 'bg-gray-700'}`}
+                >
+                  <div className={`w-6 h-6 bg-white rounded-full shadow-md transform transition-transform duration-300 ${settings.allowPartnerAlarms ? 'translate-x-6' : 'translate-x-0'}`} />
+                </button>
+              </div>
             </div>
 
           </div>

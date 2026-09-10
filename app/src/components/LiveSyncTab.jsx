@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ref, onValue } from 'firebase/database';
+import { ref, onValue, set } from 'firebase/database';
 import { db } from '../firebase';
 import { Edit2, Check, Users, Copy, CheckCheck, LogOut, Flame, Sparkles } from 'lucide-react';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
@@ -60,6 +60,53 @@ export default function LiveSyncTab({ roomId, roomMembers, partnerStats, isPartn
   const stats = partnerStats || internalStats;
   const memberCount = activeMembers ? Object.keys(activeMembers).length : 0;
   const myStats = activeMembers?.[myId]?.liveStats || {};
+
+  const partnerId = Object.keys(activeMembers || {}).find(id => id !== myId);
+  const partnerPrivileges = activeMembers?.[partnerId]?.liveStats?.privileges || {};
+  const allowNudges = partnerPrivileges.allowNudges !== false;
+  const allowAlarms = !!partnerPrivileges.allowAlarms;
+
+  const [cooldowns, setCooldowns] = useState({ nudge: 0, cheer: 0, alarm: 0 });
+  const [interactionFeedback, setInteractionFeedback] = useState('');
+
+  // Handle countdown for cooldowns
+  useEffect(() => {
+    const hasCooldown = Object.values(cooldowns).some(c => c > 0);
+    if (!hasCooldown) return;
+    const timer = setInterval(() => {
+      setCooldowns(prev => ({
+        nudge: Math.max(0, prev.nudge - 1),
+        cheer: Math.max(0, prev.cheer - 1),
+        alarm: Math.max(0, prev.alarm - 1),
+      }));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [cooldowns]);
+
+  const handleSendSignal = async (type, message) => {
+    if (!currentRoom || !partnerId) return;
+    triggerHaptic(ImpactStyle.Medium);
+
+    // Apply 25-second cooldown
+    setCooldowns(prev => ({ ...prev, [type]: 25 }));
+    const feedbackText = type === 'nudge' ? 'Nudge sent! 👋' : type === 'cheer' ? 'Cheer sent! 💜' : 'Alarm triggered! 🚨';
+    setInteractionFeedback(feedbackText);
+    setTimeout(() => setInteractionFeedback(''), 3000);
+
+    try {
+      const myName = localStorage.getItem('study_buddy_my_name') || 'Your Partner';
+      const signalRef = ref(db, `rooms/${currentRoom}/signals/${partnerId}`);
+      await set(signalRef, {
+        id: 'sig_' + Date.now(),
+        type,
+        senderName: myName,
+        message,
+        timestamp: Date.now(),
+      });
+    } catch (err) {
+      console.warn('Failed to send signal:', err);
+    }
+  };
 
   const triggerHaptic = (style = ImpactStyle.Light) => {
     try {
@@ -430,6 +477,89 @@ export default function LiveSyncTab({ roomId, roomMembers, partnerStats, isPartn
             <span className="text-white font-mono font-bold">{formatTime(todaySecs)}</span>
           </div>
         </div>
+      </div>
+
+      {/* ── Partner Interaction Bar (Nudge / Cheer / Alarm) ──────────────────── */}
+      <div className="glass-panel rounded-2xl p-4 mb-4 border border-white/5">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-gray-500 text-[9px] font-bold uppercase tracking-widest">
+            Send Live Signal
+          </span>
+          {interactionFeedback && (
+            <span className="text-[11px] font-bold text-primary animate-tab-in">
+              {interactionFeedback}
+            </span>
+          )}
+        </div>
+
+        <div className="grid grid-cols-3 gap-2">
+          {/* Nudge */}
+          <button
+            type="button"
+            disabled={cooldowns.nudge > 0 || !allowNudges}
+            onClick={() => handleSendSignal('nudge', 'Time to lock in and focus!')}
+            className={`py-2.5 px-3 rounded-xl border flex flex-col items-center justify-center transition-all ${
+              cooldowns.nudge > 0 || !allowNudges
+                ? 'bg-surfaceHighlight/40 border-white/5 text-gray-500 cursor-not-allowed'
+                : 'bg-surfaceHighlight border-white/10 hover:border-primary/40 text-gray-200 active:scale-95'
+            }`}
+          >
+            <span className="text-lg leading-none mb-1">👋</span>
+            <span className="text-[11px] font-bold tracking-tight">
+              {cooldowns.nudge > 0 ? `${cooldowns.nudge}s` : 'Nudge'}
+            </span>
+          </button>
+
+          {/* Cheer */}
+          <button
+            type="button"
+            disabled={cooldowns.cheer > 0 || !allowNudges}
+            onClick={() => handleSendSignal('cheer', 'Proud of you! Keep crushing it!')}
+            className={`py-2.5 px-3 rounded-xl border flex flex-col items-center justify-center transition-all ${
+              cooldowns.cheer > 0 || !allowNudges
+                ? 'bg-surfaceHighlight/40 border-white/5 text-gray-500 cursor-not-allowed'
+                : 'bg-surfaceHighlight border-white/10 hover:border-accent/40 text-gray-200 active:scale-95'
+            }`}
+          >
+            <span className="text-lg leading-none mb-1">💜</span>
+            <span className="text-[11px] font-bold tracking-tight">
+              {cooldowns.cheer > 0 ? `${cooldowns.cheer}s` : 'Cheer'}
+            </span>
+          </button>
+
+          {/* Alarm */}
+          <button
+            type="button"
+            disabled={cooldowns.alarm > 0 || !allowAlarms}
+            onClick={() => {
+              if (!allowAlarms) return;
+              if (window.confirm(`Trigger an emergency loud wake-up alarm on ${partnerName}'s device?`)) {
+                handleSendSignal('alarm', 'Emergency Wake-Up Alarm!');
+              }
+            }}
+            className={`py-2.5 px-3 rounded-xl border flex flex-col items-center justify-center transition-all ${
+              !allowAlarms
+                ? 'bg-surfaceHighlight/30 border-white/5 text-gray-600 cursor-not-allowed opacity-60'
+                : cooldowns.alarm > 0
+                  ? 'bg-surfaceHighlight/40 border-white/5 text-gray-500 cursor-not-allowed'
+                  : 'bg-amber-500/10 border-amber-500/30 hover:border-amber-500/50 text-amber-300 active:scale-95'
+            }`}
+            title={!allowAlarms ? 'Partner has not enabled wake-up alarms' : 'Trigger wake-up alarm'}
+          >
+            <span className="text-lg leading-none mb-1">
+              {!allowAlarms ? '🔒' : '🚨'}
+            </span>
+            <span className="text-[11px] font-bold tracking-tight">
+              {!allowAlarms ? 'Locked' : cooldowns.alarm > 0 ? `${cooldowns.alarm}s` : 'Alarm'}
+            </span>
+          </button>
+        </div>
+
+        {!allowAlarms && (
+          <p className="text-[10px] text-gray-500 mt-2 text-center">
+            Alarm locked · {partnerName} hasn't enabled Wake-Up Privileges
+          </p>
+        )}
       </div>
 
       {/* ── Side-by-Side Metric Grid ─────────────────────────────────────────── */}

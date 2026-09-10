@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Timer, Radio } from 'lucide-react';
-import { ref, onValue } from 'firebase/database';
+import { Timer, Radio, Bell } from 'lucide-react';
+import { ref, onValue, remove } from 'firebase/database';
 import { db } from './firebase';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
@@ -79,6 +79,72 @@ function App() {
 
     return () => unsubscribe();
   }, [roomId]);
+
+  const [toastSignal, setToastSignal] = useState(null);
+
+  // ── Real-Time Partner Signaling (Nudges, Cheers, Alarms) ───────────────────
+  useEffect(() => {
+    if (!roomId || roomId === 'solo') return;
+    const myId = getOrCreateDeviceId();
+    const signalRef = ref(db, `rooms/${roomId}/signals/${myId}`);
+
+    const unsubscribe = onValue(signalRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const signal = snapshot.val();
+        // Remove signal immediately from Firebase so it doesn't replay
+        remove(signalRef).catch(() => {});
+
+        const rawSettings = localStorage.getItem('focusSettings');
+        const settings = rawSettings ? JSON.parse(rawSettings) : {};
+
+        if (signal.type === 'nudge') {
+          if (settings.allowPartnerNudges !== false) {
+            try { Haptics.impact({ style: ImpactStyle.Heavy }); } catch (_) {}
+            setToastSignal({
+              type: 'nudge',
+              icon: '👋',
+              title: `${signal.senderName || 'Partner'} sent a Focus Nudge!`,
+              message: signal.message || 'Time to get back in the zone.',
+            });
+          }
+        } else if (signal.type === 'cheer') {
+          if (settings.allowPartnerNudges !== false) {
+            try { Haptics.notification({ type: 'SUCCESS' }); } catch (_) {}
+            setToastSignal({
+              type: 'cheer',
+              icon: '💜',
+              title: `${signal.senderName || 'Partner'} cheered for you!`,
+              message: signal.message || 'Keep crushing your session!',
+            });
+          }
+        } else if (signal.type === 'alarm') {
+          if (settings.allowPartnerAlarms === true) {
+            try {
+              TimerNotification.playAlarm({
+                title: '🚨 Partner Emergency Alarm',
+                body: `${signal.senderName || 'Partner'} triggered a wake-up alarm!`,
+              });
+            } catch (_) {}
+            setToastSignal({
+              type: 'alarm',
+              icon: '🚨',
+              title: `Partner Emergency Alarm Triggered!`,
+              message: signal.message || 'Wake up and get back to work!',
+            });
+          }
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, [roomId]);
+
+  // Auto-dismiss toast after 4 seconds
+  useEffect(() => {
+    if (!toastSignal) return;
+    const t = setTimeout(() => setToastSignal(null), 4000);
+    return () => clearTimeout(t);
+  }, [toastSignal]);
 
   useEffect(() => {
     // Initialize OneSignal Push Notifications using the reliable v3 Cordova API
@@ -382,6 +448,39 @@ function App() {
   return (
     <div className="flex flex-col h-screen w-full bg-background overflow-hidden relative selection:bg-primary/30">
       
+      {/* ── Floating In-App Interaction Toast ──────────────────────────────────── */}
+      {toastSignal && (
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[100] w-[90%] max-w-sm animate-tab-in pointer-events-auto">
+          <div className="glass-panel p-3.5 rounded-2xl border border-primary/30 shadow-2xl bg-surfaceHighlight/95 backdrop-blur-xl flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center text-xl flex-shrink-0">
+              {toastSignal.icon}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-white font-bold text-xs truncate">{toastSignal.title}</p>
+              <p className="text-gray-400 text-[11px] truncate mt-0.5">{toastSignal.message}</p>
+            </div>
+            {toastSignal.type === 'alarm' ? (
+              <button
+                onClick={() => {
+                  try { TimerNotification.stopAlarm(); } catch (_) {}
+                  setToastSignal(null);
+                }}
+                className="px-2.5 py-1 bg-red-500/20 text-red-400 border border-red-500/40 rounded-lg text-[10px] font-bold uppercase tracking-wider flex-shrink-0 active:scale-95"
+              >
+                Stop
+              </button>
+            ) : (
+              <button
+                onClick={() => setToastSignal(null)}
+                className="text-gray-500 hover:text-white p-1 text-xs"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Main Content Area */}
       <main className="flex-1 overflow-hidden relative">
         <div className={`h-full w-full ${activeTab === 'focus' ? 'block animate-tab-in' : 'hidden'}`}>
